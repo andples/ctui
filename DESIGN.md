@@ -1,0 +1,494 @@
+# ctui — design plan
+
+A minimal terminal calendar and task list. One binary, `ctui` (alias it as
+`ct`). Run with no arguments and you get the TUI. Run with arguments and it's a
+plain command-line tool that does the same things. Everything stays on your
+machine: no accounts, no server, no Google. You can bring a Google calendar
+over once with `ct import`.
+
+Status: plan only (2026-10-15). Nothing below is built yet.
+
+---
+
+## 1. Principles
+
+These decide every argument later. When a feature conflicts with them, the
+feature loses.
+
+1. **Usable first.** Someone opening it for the first time can add, tick off
+   and find things without reading docs. The key line always shows the keys
+   for where you are, `?` shows the rest, and every action can be undone.
+2. **One grammar everywhere.** The quick-add language (`dentist fri 3pm 1h #health`)
+   is the same in `ct add`, the TUI's add bar and the `:` command line. Learn
+   it once.
+3. **CLI and TUI are equals.** Anything you can do in the TUI you can do with a
+   command, and the other way round. Both are thin layers over one core.
+4. **No bloat.** No daemon, no plugins, no server, no account, no notes or
+   markdown editor, no kanban, no time tracking. A small binary that starts
+   instantly.
+5. **Your data is plain files in an open format.** Standard iCalendar
+   (`.ics`), one file per item (§4). It's readable by other tools and syncable
+   with Syncthing, git or vdirsyncer, and there's never lock-in, ours included.
+6. **Customizable, not configurable to death.** Theme, keys, date/time format,
+   week start, which views exist and the default view. Sensible defaults mean
+   most people never open the config.
+7. **Nothing to save.** Every change is written immediately. No "save?"
+   prompts, no lost edits.
+
+Inspiration taken from ttyp: the `:` command palette with fuzzy completion, the
+key-hint line, TOML themes, one look for every list (` › ` marker), config
+saved on change, a UI-free core, and time injected (`*_at(now)`) so tests are
+deterministic. Where ctui should do better than ttyp: fewer screens, every key
+visible in context, undo for everything, and a live preview of what you're
+typing.
+
+---
+
+## 2. Concepts (only three)
+
+| Concept | What it is | iCalendar |
+|---|---|---|
+| **Task** | Something to tick off. Optional due date or time, priority, repeat, subtasks. | `VTODO` |
+| **Event** | Something that happens at a time: timed or all-day, optional repeat. | `VEVENT` |
+| **List** | A named group (`personal`, `work`) with a colour. Tasks and events both belong to one. | a vdir collection (a folder) |
+
+That's all of them. There are no tags, projects, contexts, areas or
+priorities beyond `!`/`!!`/`!!!`. `#name` picks the list.
+
+Subtasks: a task can have checklist children, one level deep (`RELATED-TO`).
+They're shown collapsed under the parent with a `2/5` count.
+
+---
+
+## 3. Views
+
+Three views. `1` `2` `3` (or `tab`) switches between them. Each can be hidden in
+the config, and the default view is configurable.
+
+### 3.1 Agenda (default): tasks and calendar together
+
+```
+ ctui                                         Wed 15 Oct 2026
+ ─────────────────────────────────────────────────────────────
+ Overdue
+   ☐  renew passport                 due Mon 13      #personal
+ Today · Wed 15
+   09:30–10:00  standup                               #work
+ › ☐  pay rent                                       #personal !
+   14:00–15:00  dentist                               #health
+   ☑  buy milk                                       #personal
+ Tomorrow · Thu 16
+   ☐  send invoice                   17:00            #work
+ Sat 18
+   all day      Sam's birthday                        #personal
+ ─────────────────────────────────────────────────────────────
+ a add  x done  e edit  d delete  u undo  / filter  ? help
+```
+
+- Overdue tasks are at the top (they collapse after N, configurable). Then
+  today, then the next days that have anything in them. Empty days are
+  skipped. Undated tasks are reached with `T` (or the Tasks view).
+- Events and tasks are mixed in time order. Timed items come first, then
+  all-day ones, then tasks due that day.
+- Done items stay visible (dimmed) for the rest of the day, so you see what you
+  got done. After that they drop out (`hide_done_after`).
+
+### 3.2 Month: the calendar
+
+```
+ October 2026                      │ Wed 15
+  Mo  Tu  We  Th  Fr  Sa  Su       │ 09:30 standup
+            1   2   3   4          │ 14:00 dentist
+   5   6   7   8   9  10· 11       │ ☐ pay rent
+  12  13• 14 [15]•16• 17  18•      │ ☑ buy milk
+  19  20  21  22  23  24  25       │
+  26  27  28  29  30  31           │
+```
+
+- A grid with dots for busy days (in the list colour, and denser when
+  busier), plus a pane for the selected day. On narrow terminals the pane
+  moves below the grid; on wide ones the cells get room for the first event
+  titles.
+- `h/j/k/l` or the arrows move the day, `[`/`]` change month, `t` is today,
+  `g` goes to a date (typed with the same grammar: `g dec 24`, `g +2w`),
+  `enter` opens that day in the Agenda.
+
+### 3.3 Tasks: the checklist
+
+```
+ personal (4)   work (2)   health (1)   all (7)
+ ─────────────────────────────────────────────
+ › ☐  pay rent                     today     !
+   ☐  renew passport               Mon 13 ⚠
+   ▸ ☐  plan trip  2/5
+   ☐  call grandma
+```
+
+- Tabs per list (`H`/`L` or `←`/`→` on the tab row), plus an "all" tab.
+  Sorting by due date, then priority, then created, is the default;
+  `s` cycles through due / priority / manual.
+- `space` expands subtasks. `J`/`K` reorders when the sort is manual. `>` and
+  `<` indent a task under the one above, or outdent it.
+
+**Not in v1:** an hour-by-hour week grid. In a terminal the agenda is more
+readable. It might come later as a fourth, optional view if it's actually
+missed.
+
+---
+
+## 4. Storage
+
+**Decision: iCalendar files in a vdir.** One `.ics` file per item, one folder
+per list:
+
+```
+~/.local/share/ctui/            (data_dir, configurable)
+  personal/
+    .ctui-list.toml             colour and display name (optional)
+    3f9c…e1.ics                 one VTODO or VEVENT
+  work/
+    …
+```
+
+Why this over SQLite, JSON or our own format:
+
+- **Sync for free, without Google.** It's exactly the layout `vdirsyncer`
+  uses, so pointing `data_dir` at a vdirsyncer storage syncs with any CalDAV
+  server (Radicale, Nextcloud, Fastmail, iCloud). That's zero sync code in
+  ctui. Syncthing or git also work, and conflicts are per item, never one big
+  file.
+- **Import and export are trivial**, because the native format *is* the
+  exchange format.
+- **Works alongside other tools:** khal, todoman, Thunderbird (via a CalDAV
+  server).
+- **No lock-in**, ctui included.
+
+Rules:
+
+- **Round-trip safety.** Properties ctui doesn't understand are kept
+  untouched on write. Editing a title in ctui must never delete another
+  client's data. This needs tests with real-world files (Google, Apple,
+  Thunderbird, Nextcloud exports).
+- **Atomic writes:** write `uid.ics.tmp` → fsync → rename.
+- **External changes:** the TUI re-scans when files change (poll the dir
+  mtimes every ~2 s while open). That's cheap and needs no watcher dependency.
+- **Index:** load everything into memory at start-up. Thousands of small files
+  parse in milliseconds. If that ever stops being true, add a cache
+  (`state_dir/index.bin`, keyed by mtime) rather than switching formats.
+- **Times:** timed items store `TZID` with the local zone. All-day items use
+  `VALUE=DATE`. Floating times (no zone) from imports are shown as local.
+- **Deleting** removes the file and keeps a copy in `state_dir/trash/` so
+  undo works. Trash is emptied after 30 days.
+
+Other paths (XDG via `directories`):
+
+| | Path | Contents |
+|---|---|---|
+| config | `~/.config/ctui/config.toml`, `themes/*.toml` | settings, user themes |
+| data | `~/.local/share/ctui/` | the vdir (above) |
+| state | `~/.local/state/ctui/` | undo journal, trash, last listing (for CLI numbers) |
+
+---
+
+## 5. The quick-add grammar
+
+Used by `ct add`, the TUI add bar (`a`), edit (`e`, prefilled) and `g` (go to
+date). Words that aren't tokens make up the title. Order doesn't matter.
+
+| Token | Meaning | Examples |
+|---|---|---|
+| date | due date (task) or day (event) | `today` `tod` `tomorrow` `tom` `fri` `next fri` `oct 20` `20/10` `2026-10-20` `+3d` `+2w` `eom` |
+| time | due time, or start time | `3pm` `15:00` `9.30` `noon` |
+| range / length | **makes it an event** | `3-4pm` `14:00-15:30` `3pm 1h` `for 45m` |
+| `allday` / date span | all-day event | `allday sat` `oct 20-22` |
+| `#list` | list (fuzzy, must exist, or `#new!` to create it) | `#work` `#pers` |
+| `!` `!!` `!!!` | priority | |
+| `every …` | repeat | `every day` `every weekday` `every 2 weeks` `every month on 1` `every year` |
+| `"…"` | literal title text, so `"fri"` stays a word | |
+
+**Task or event?** It's an event if it has a time range, a length or `allday`.
+Otherwise it's a task. `ct add task …` / `ct add event …` (TUI: `A` = event)
+force one or the other. No other rules to learn.
+
+**Live preview.** While you type in the add bar, the line under it shows the
+parse result: `task · due Fri 17 Oct 15:00 · #work · !` or
+`event · Sat 18 Oct 14:00–15:00 · #health`. Unrecognised tokens just become
+title text. The preview is what makes the grammar safe to use.
+
+The parser is written in-house (no NLP dependency) and is small, strict and
+heavily tested. Dates resolve forward: `fri` on a Friday means today, and
+`next fri` means a week later. Week start and date order (`20/10` vs `10/20`)
+come from the config.
+
+---
+
+## 6. CLI
+
+```
+ct                              open the TUI
+ct add <text>                   add (task or event, by the grammar)
+ct ls [today|week|overdue|all|#list|<query>]     list tasks (default: open, due ≤ today + undated)
+ct ag [days]                    agenda: events and tasks, next 7 days by default
+ct cal [month]                  print a month grid (like `cal`, with dots)
+ct done <ref>…                  tick off (recurring tasks advance)
+ct undone <ref>
+ct edit <ref> [text]            re-parse text onto the item, or open $EDITOR on the .ics
+ct mv <ref> <date|#list>        reschedule or move
+ct rm <ref>…
+ct undo                         undo the last change (from the CLI or the TUI)
+ct lists                        list lists; `ct lists add|rename|rm`
+ct import <file.ics> [#list]    one-way import (§9)
+ct export [#list] > out.ics
+ct remind                       print/notify reminders due now (§8); for a timer, not a daemon
+```
+
+- **Refs:** the numbers from the last `ls`/`ag` output (saved in the state dir,
+  like taskwarrior's working set), *or* text matched against open items.
+  `ct done milk` works when exactly one item matches. Otherwise it lists the
+  matches and changes nothing.
+- **Output:** plain aligned text, coloured only on a TTY, with `NO_COLOR`
+  respected. `--json` on every read command for scripting. Exit codes mean
+  something (0 ok, 1 no match/error, 2 ambiguous).
+- Every change prints one line saying what happened:
+  `added task 4 · due Fri 17 Oct · #work`, `done 4 · pay rent (next: 15 Nov)`.
+- Shell completions (`ct completions bash|zsh|fish`) from clap, including list
+  names.
+
+---
+
+## 7. TUI keys
+
+Vim keys and arrows both work everywhere. The bottom line always shows the
+keys that do something right now. `?` opens the full list, generated from the
+keymap, so it can't go out of date.
+
+| Key | Action |
+|---|---|
+| `j/k` `↓/↑` | move |
+| `1` `2` `3` / `tab` | Agenda / Month / Tasks |
+| `a` / `A` | add (grammar; `A` forces an event); prefilled with the selected day or list |
+| `x` / `space` | tick off / un-tick (on a parent: expand/collapse) |
+| `e` / `enter` | edit: the add bar prefilled with the item as grammar text |
+| `E` | edit in `$EDITOR` (the raw `.ics`) for the rare fields |
+| `d` | delete (no confirm: undo is one key away, and a toast says "deleted · u undo") |
+| `u` / `ctrl+r` | undo / redo |
+| `m` | move: date or `#list`, same grammar |
+| `+` `-` | reschedule +1 day / −1 day (the most common edit, so it gets one key) |
+| `>` `<` | indent under the task above / outdent (Tasks view) |
+| `t` | jump to today |
+| `[` `]` | previous / next period |
+| `g` | go to a date |
+| `/` | filter (live, fuzzy over title and list); `esc` clears |
+| `:` | command line: every CLI command works here (`:import ~/cal.ics`, `:theme nord`) |
+| `?` | help |
+| `q` | quit |
+
+- **Remappable:** `[keys]` in the config maps action names to keys. `?` and
+  the hint line pick up the changes.
+- **Mouse** (optional, on by default): click to select, click a day, scroll,
+  click the checkbox to tick it.
+- **Toasts:** a one-line message at the bottom after every change, with the
+  undo hint. They disappear on the next key.
+- **Resizing:** layouts degrade step by step. Panes stack, then the list
+  columns drop, then only titles are left. Nothing breaks at 40×12.
+
+---
+
+## 8. Reminders (no daemon)
+
+`VALARM` on items (grammar: `remind 10m`, or `default_reminder` per list).
+`ct remind` prints and `notify-send`s anything due since its last run, then
+remembers where it got to. The README shows a systemd user timer and a cron
+line that run it every minute. If you don't set either up, there are no
+reminders and no background process. Inside the TUI, items due now are
+highlighted.
+
+---
+
+## 9. Importing (one way into ctui)
+
+`ct import file.ics [#list]`:
+
+- Reads `.ics` files (Google Takeout / Google Calendar "Export", Apple,
+  Outlook, Proton…) and directories of them, plus `.zip` Takeout archives
+  (they contain one `.ics` per calendar).
+- Each source calendar becomes a list unless `#list` is given.
+- **Idempotent:** items are keyed by their `UID`. Re-importing a newer export
+  updates items that are unchanged locally and skips ones you've edited in
+  ctui (reported as such). It never creates duplicates.
+- `--dry-run` shows what would be added, updated or skipped.
+- The README has a short "Leaving Google Calendar" section covering Takeout,
+  `ct import`, and deleting the Google calendar if you want.
+
+Also: Google **Tasks** can't be exported as `.ics` (Takeout gives JSON).
+Importing Takeout's `Tasks.json` is a small extra parser, worth it for a
+complete exit. It's in milestone M6.
+
+Export (`ct export`) writes a single standard `.ics`, so leaving ctui is just
+as easy.
+
+---
+
+## 10. Customization
+
+`config.toml`, with every key optional (`#[serde(default)]`). `:set key value`
+changes a setting from inside the TUI and saves it right away.
+
+```toml
+theme        = "default"        # or a file in themes/
+default_view = "agenda"         # agenda | month | tasks
+views        = ["agenda", "month", "tasks"]
+week_start   = "monday"
+date_order   = "dmy"            # dmy | mdy | ymd (for typed dates like 20/10)
+time_format  = "24h"            # 24h | 12h
+agenda_days  = 7
+hide_done_after = "1d"          # done items stay visible this long
+default_list = "personal"
+mouse        = true
+data_dir     = "~/.local/share/ctui"   # point at a Syncthing/vdirsyncer folder
+
+[keys]                          # action = key(s); only what you change
+done = ["x", "space"]
+```
+
+Themes are TOML palettes in the same shape as ttyp's (`bg`, `fg`, `sub`,
+`main`, `done`, `overdue`, `today`, plus per-list colours from
+`.ctui-list.toml`). Only `default` and one light theme are built in.
+`bg = "reset"` uses the terminal's own background, and that is the default, so
+ctui fits any terminal theme out of the box.
+
+---
+
+## 11. Recurrence
+
+- RRULE via the `rrule` crate. Only the grammar's common cases can be typed
+  (`every …`). Anything an import brings in (EXDATE, BYSETPOS…) is displayed
+  correctly and kept intact.
+- **Recurring events:** expanded on the fly for the visible range. Editing one
+  asks only once: `this` / `all` (two keys). "This and following" is
+  deliberately left out because it's the classic source of calendar bugs.
+  Editing just "this" writes a `RECURRENCE-ID` override.
+- **Recurring tasks:** ticking one advances `DUE` to the next occurrence and
+  records the completion (todoman's approach), so the list never fills with
+  copies.
+
+---
+
+## 12. Architecture
+
+A single crate, `lib.rs` plus `main.rs`, split into a workspace only if a
+second consumer ever appears.
+
+```
+src/
+  main.rs          clap: no args → tui::run, else cli::run
+  core/            UI-free. The only place that changes data.
+    model.rs       Item {Task|Event}, List, Priority, Repeat
+    store.rs       vdir load/save/watch, atomic writes, trash
+    ical.rs        Item ⇄ .ics with unknown-property passthrough
+    parse.rs       the grammar (§5) → Draft; Draft → preview text
+    query.rs       agenda(range), tasks(filter, sort), month(dots)
+    recur.rs       expansion, advance-on-done, overrides
+    undo.rs        journal of Ops (before/after snapshots), shared by CLI and TUI
+    ops.rs         Op enum: Add, Edit, Done, Move, Delete… → apply(&mut Store, now)
+    import.rs      ics/zip/Tasks.json → Ops (idempotent by UID)
+  cli/             subcommands → core::ops; text and json output
+  tui/
+    app.rs         App state, Action enum, dispatch(Action), event loop
+    keys.rs        keymap (defaults + config), key → Action, help table
+    views/         agenda.rs, month.rs, tasks.rs: rendering only
+    widgets/       list (one selection look), addbar (input + live preview), toast, hints
+  config.rs        Config, Paths, themes
+```
+
+Conventions (from ttyp, where they worked):
+
+- Every change, from the CLI or the TUI, is an `Op` applied through
+  `ops::apply`, which writes the file and the undo entry. Nothing else
+  touches the store.
+- In the TUI, every state change goes through `App::dispatch(Action)`.
+- Functions that depend on "now" take it as an argument (`now: DateTime<Tz>`), so
+  "today", "overdue" and the date parser are all testable.
+- Views only render; they never change state.
+
+### Dependencies (kept short on purpose)
+
+`ratatui`, `crossterm`, `clap` (+ `clap_complete`), `serde`, `toml`,
+`directories`, `anyhow`, `icalendar` (parsing/writing; check its round-trip
+handling first, and keep the option of a small hand-written line parser),
+`rrule`, `chrono` + `chrono-tz` (needed by `rrule`), `uuid`, `zip` (import
+only; feature-gated if it bloats). No async runtime, no file-watch crate, no
+NLP crate.
+
+### Targets
+
+- Cold start to first frame: **< 50 ms** with 2,000 items.
+- Release binary: **< 6 MB** stripped.
+- Every keypress redraws in under one frame. No spinners anywhere.
+
+---
+
+## 13. Testing
+
+- `core` gets unit tests for everything, with injected `now`. The parser gets
+  a table of (input, now) → expected `Draft`, with lots of cases including
+  DST changes, month ends and leap days.
+- iCalendar round-trip fixtures (real exports from Google, Apple, Thunderbird
+  and Nextcloud, anonymised): parse → write → parse must be identical,
+  unknown properties included.
+- The CLI is tested end to end against a temp data dir (`--data-dir`,
+  `--config-dir`, `--state-dir` flags, as in ttyp).
+- TUI: snapshot tests of each view rendered to a ratatui `TestBackend` at a
+  few sizes, plus headless tmux runs for manual checks (private socket:
+  `tmux -L ctui …`).
+- `cargo clippy -- -D warnings` and `cargo fmt` stay clean.
+
+---
+
+## 14. Milestones
+
+Each one ends with something usable.
+
+| | Milestone | Done when |
+|---|---|---|
+| **M0** | Skeleton | clap with an empty TUI, config/paths, CI (test + clippy) |
+| **M1** | Tasks core + CLI | model, vdir store with `.ics` round-trip, grammar for tasks, `add/ls/done/undone/rm/edit/mv/undo`, refs, `--json` |
+| **M2** | Tasks TUI | Tasks view, add bar with live preview, all §7 keys for tasks, undo toasts, hints, `?`, filter, mouse |
+| **M3** | Events + Agenda | events in model and grammar (ranges, all-day), Agenda view, `ct ag` |
+| **M4** | Month view | grid, dots, day pane, `g`, `[` `]`, `ct cal`, responsive layouts |
+| **M5** | Recurrence | `every …`, expansion, advance-on-done, this/all edits |
+| **M6** | Import/export | `.ics`/dir/zip import, idempotent by UID, `--dry-run`, Tasks.json, export, the "Leaving Google" guide |
+| **M7** | Customization | keymap remapping, themes, `:set`, view list, date/time formats |
+| **M8** | Reminders | VALARM, `ct remind`, systemd timer example |
+| **M9** | Polish → 1.0 | performance targets checked, README, completions, then public release (crates.io / Homebrew / AUR, as with ttyp) when the owner decides |
+
+M1 to M3 are the core: after M3 it's already a daily-usable agenda and task
+list.
+
+---
+
+## 15. Non-goals
+
+- Two-way sync with Google or any account system (use vdirsyncer if you need
+  CalDAV).
+- A background daemon or tray icon.
+- Plugins or a scripting language. The CLI and `--json` are the extension
+  points.
+- Notes, markdown, attachments, time tracking, kanban, pomodoro, habits,
+  sharing or invites (RSVP).
+- An hour-grid week view (maybe later, §3).
+- Nesting subtasks deeper than one level.
+
+---
+
+## 16. Open questions
+
+1. **Storage format.** The plan uses vdir + iCalendar (§4) for the free sync
+   and interoperability. The alternative is a simpler home-made format (TOML
+   per item) with `.ics` import/export only. This is the one decision that's
+   expensive to change later.
+2. **License** when it goes public: MIT like ttyp?
+3. Should `ct` itself be installed as a binary name? The plan says no: Arch's
+   `extra/ct` (Flatcar config transpiler) also installs `/usr/bin/ct`, so the
+   README suggests `alias ct=ctui` instead.
+4. Should a light theme be built in as well as the default, or only one?
