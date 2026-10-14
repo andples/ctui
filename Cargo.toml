@@ -32,9 +32,10 @@ uuid = { version = "1.28.0", features = ["v4"] }
 zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [profile.release]
-lto = "thin"
+lto = true
 codegen-units = 1
 strip = true
+panic = "abort"
 
 [lints.clippy]
 all = "warn"

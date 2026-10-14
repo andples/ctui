@@ -509,6 +509,11 @@ fn draw_grid(f: &mut Frame, app: &mut App, p: &Pal, area: Rect, big: bool) {
     let (start, first, last) = app.month_bounds();
     let o = app.opts();
     let busy = query::busy_days(&app.s.store, start, start + Duration::days(42), &o);
+    let by_day = if big {
+        query::days(&app.s.store, start, start + Duration::days(42), &o)
+    } else {
+        Default::default()
+    };
     let today = app.today();
     let title = first.format("%B %Y").to_string();
     let cell_w: u16 = if big {
@@ -610,7 +615,7 @@ fn draw_grid(f: &mut Frame, app: &mut App, p: &Pal, area: Rect, big: bool) {
             }
             let mut text = vec![line];
             if big && cell.height > 1 {
-                let entries = query::day(&app.s.store, d, &o);
+                let entries = by_day.get(&d).cloned().unwrap_or_default();
                 let room = cell.height as usize - 1;
                 for (k, e) in entries.iter().enumerate().take(room) {
                     if k + 1 == room && entries.len() > room {

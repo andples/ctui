@@ -1,6 +1,6 @@
 //! Read-only views of the store: the agenda, the task list, month dots.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Utc};
 use chrono_tz::Tz;
@@ -79,16 +79,27 @@ impl Opts {
     }
 }
 
-fn progress(store: &Store, uid: &str) -> Option<(usize, usize)> {
-    let kids: Vec<&Item> = store
-        .items
-        .iter()
-        .filter(|c| c.f.parent.as_deref() == Some(uid))
-        .collect();
-    (!kids.is_empty()).then(|| (kids.iter().filter(|c| c.f.done).count(), kids.len()))
+/// Subtasks done / total per parent.
+fn progress_map(store: &Store) -> HashMap<&str, (usize, usize)> {
+    let mut m: HashMap<&str, (usize, usize)> = HashMap::new();
+    for c in &store.items {
+        if let Some(p) = c.f.parent.as_deref() {
+            let e = m.entry(p).or_default();
+            e.1 += 1;
+            if c.f.done {
+                e.0 += 1;
+            }
+        }
+    }
+    m
 }
 
-fn task_entry(store: &Store, item: &Item, day: NaiveDate, o: &Opts) -> Entry {
+fn task_entry_with(
+    item: &Item,
+    day: NaiveDate,
+    o: &Opts,
+    progress: &HashMap<&str, (usize, usize)>,
+) -> Entry {
     let tz = o.tz;
     let due = item.f.due;
     let overdue = !item.f.done
@@ -115,7 +126,7 @@ fn task_entry(store: &Store, item: &Item, day: NaiveDate, o: &Opts) -> Entry {
         overdue,
         priority: item.f.priority,
         recurring: item.is_recurring(),
-        progress: progress(store, &item.uid),
+        progress: progress.get(item.uid.as_str()).copied(),
         due: due.map(|d| d.date(tz)),
         now,
     }
@@ -123,42 +134,69 @@ fn task_entry(store: &Store, item: &Item, day: NaiveDate, o: &Opts) -> Entry {
 
 /// Event and task entries on one day (no overdue section).
 pub fn day(store: &Store, d: NaiveDate, o: &Opts) -> Vec<Entry> {
+    days(store, d, d + Duration::days(1), o)
+        .remove(&d)
+        .unwrap_or_default()
+}
+
+/// Entries for every day in `[from, to)` in one pass over the store.
+pub fn days(
+    store: &Store,
+    from: NaiveDate,
+    to: NaiveDate,
+    o: &Opts,
+) -> HashMap<NaiveDate, Vec<Entry>> {
     let tz = o.tz;
-    let mut out = Vec::new();
+    let progress = progress_map(store);
+    let mut out: HashMap<NaiveDate, Vec<Entry>> = HashMap::new();
     for item in &store.items {
         match item.kind {
             Kind::Event => {
-                for occ in recur::occurrences(item, d, d + Duration::days(1), tz) {
+                for occ in recur::occurrences(item, from, to, tz) {
                     let s_day = occ.start.date(tz);
                     let all_day = occ.start.is_date();
                     let end_local = occ.end.map(|e| e.local(tz));
-                    let ends_today = end_local.is_some_and(|e| e.date() == d);
+                    // The last day it shows on: an all-day DTEND (and a midnight end) is exclusive.
+                    let last = match (occ.end, end_local) {
+                        (Some(e), _) if e.is_date() => e.date(tz) - Duration::days(1),
+                        (_, Some(e)) if e.time() == NaiveTime::MIN && e.date() > s_day => {
+                            e.date() - Duration::days(1)
+                        }
+                        (_, Some(e)) => e.date(),
+                        _ => s_day,
+                    }
+                    .max(s_day);
                     let in_progress = !all_day
                         && occ.start.instant(tz) <= o.now
                         && occ.end.is_some_and(|e| e.instant(tz) > o.now);
-                    out.push(Entry {
-                        uid: item.uid.clone(),
-                        rid: occ.rid,
-                        kind: Kind::Event,
-                        title: occ.f.title.clone(),
-                        list: item.list.clone(),
-                        day: d,
-                        start: if s_day == d { occ.start.time(tz) } else { None },
-                        end: if ends_today && !all_day {
-                            end_local.map(|e| e.time())
-                        } else {
-                            None
-                        },
-                        continued: s_day < d,
-                        all_day: all_day || (s_day < d && !ends_today),
-                        done: false,
-                        overdue: false,
-                        priority: occ.f.priority,
-                        recurring: item.is_recurring(),
-                        progress: None,
-                        due: None,
-                        now: in_progress,
-                    });
+                    let mut d = s_day.max(from);
+                    while d <= last && d < to {
+                        let ends_today = end_local.is_some_and(|e| e.date() == d);
+                        out.entry(d).or_default().push(Entry {
+                            uid: item.uid.clone(),
+                            rid: occ.rid,
+                            kind: Kind::Event,
+                            title: occ.f.title.clone(),
+                            list: item.list.clone(),
+                            day: d,
+                            start: if s_day == d { occ.start.time(tz) } else { None },
+                            end: if ends_today && !all_day {
+                                end_local.map(|e| e.time())
+                            } else {
+                                None
+                            },
+                            continued: s_day < d,
+                            all_day: all_day || (s_day < d && !ends_today),
+                            done: false,
+                            overdue: false,
+                            priority: occ.f.priority,
+                            recurring: item.is_recurring(),
+                            progress: None,
+                            due: None,
+                            now: in_progress,
+                        });
+                        d += Duration::days(1);
+                    }
                 }
             }
             Kind::Task => {
@@ -166,20 +204,28 @@ pub fn day(store: &Store, d: NaiveDate, o: &Opts) -> Vec<Entry> {
                     continue;
                 }
                 let due_day = item.f.due.map(|m| m.date(tz));
-                let done_day = item.f.completed.map(|c| c.with_timezone(&tz).date_naive());
-                let show = if item.f.done {
-                    o.done_visible(item)
-                        && (done_day == Some(d) || (done_day.is_none() && due_day == Some(d)))
+                let day = if item.f.done {
+                    if !o.done_visible(item) {
+                        continue;
+                    }
+                    item.f
+                        .completed
+                        .map(|c| c.with_timezone(&tz).date_naive())
+                        .or(due_day)
                 } else {
-                    due_day == Some(d)
+                    due_day
                 };
-                if show {
-                    out.push(task_entry(store, item, d, o));
+                if let Some(d) = day.filter(|d| *d >= from && *d < to) {
+                    out.entry(d)
+                        .or_default()
+                        .push(task_entry_with(item, d, o, &progress));
                 }
             }
         }
     }
-    sort_day(&mut out);
+    for v in out.values_mut() {
+        sort_day(v);
+    }
     out
 }
 
@@ -212,6 +258,7 @@ pub fn agenda(
     show_all_overdue: bool,
 ) -> Vec<Section> {
     let today = o.today();
+    let progress = progress_map(store);
     let mut sections = Vec::new();
     if from <= today {
         let mut overdue: Vec<Entry> = store
@@ -219,7 +266,7 @@ pub fn agenda(
             .iter()
             .filter(|i| i.kind == Kind::Task && !i.f.done && i.f.parent.is_none())
             .filter(|i| i.f.due.is_some_and(|d| d.date(o.tz) < today))
-            .map(|i| task_entry(store, i, today, o))
+            .map(|i| task_entry_with(i, today, o, &progress))
             .collect();
         overdue.sort_by(|a, b| a.due.cmp(&b.due).then(b.priority.cmp(&a.priority)));
         let mut hidden = 0;
@@ -236,9 +283,10 @@ pub fn agenda(
             });
         }
     }
+    let mut by_day = self::days(store, from, from + Duration::days(days.max(1) as i64), o);
     for k in 0..days.max(1) {
         let d = from + Duration::days(k as i64);
-        let entries = day(store, d, o);
+        let entries = by_day.remove(&d).unwrap_or_default();
         if entries.is_empty() && d != today {
             continue;
         }
@@ -270,13 +318,14 @@ pub fn day_title(d: NaiveDate, today: NaiveDate) -> String {
 
 /// Undated open tasks (the agenda's "Someday").
 pub fn undated(store: &Store, o: &Opts) -> Vec<Entry> {
+    let progress = progress_map(store);
     let mut v: Vec<Entry> = store
         .items
         .iter()
         .filter(|i| {
             i.kind == Kind::Task && i.f.parent.is_none() && i.f.due.is_none() && o.done_visible(i)
         })
-        .map(|i| task_entry(store, i, o.today(), o))
+        .map(|i| task_entry_with(i, o.today(), o, &progress))
         .collect();
     v.sort_by(|a, b| {
         a.done
@@ -360,32 +409,36 @@ fn task_order(a: &Item, b: &Item, sort: Sort, tz: Tz) -> std::cmp::Ordering {
 /// Tasks in `list` (all lists with `None`), parents followed by their subtasks.
 pub fn tasks(store: &Store, list: Option<&str>, sort: Sort, o: &Opts) -> Vec<TaskRow> {
     let tz = o.tz;
+    let progress = progress_map(store);
+    let uids: HashSet<&str> = store.items.iter().map(|i| i.uid.as_str()).collect();
+    let mut kids_of: HashMap<&str, Vec<&Item>> = HashMap::new();
+    for c in &store.items {
+        if let Some(p) = c.f.parent.as_deref().filter(|p| uids.contains(p)) {
+            kids_of.entry(p).or_default().push(c);
+        }
+    }
     let mut top: Vec<&Item> = store
         .items
         .iter()
         .filter(|i| i.kind == Kind::Task && list.is_none_or(|l| i.list == l))
-        .filter(|i| i.f.parent.as_ref().is_none_or(|p| store.get(p).is_none()))
+        .filter(|i| i.f.parent.as_deref().is_none_or(|p| !uids.contains(p)))
         .filter(|i| o.done_visible(i))
         .collect();
     top.sort_by(|a, b| task_order(a, b, sort, tz));
     let mut out = Vec::new();
     for t in top {
-        let mut kids: Vec<&Item> = store
-            .items
-            .iter()
-            .filter(|c| c.f.parent.as_deref() == Some(&t.uid))
-            .collect();
+        let mut kids = kids_of.remove(t.uid.as_str()).unwrap_or_default();
         kids.sort_by(|a, b| task_order(a, b, Sort::Manual, tz));
         let day = t.f.due.map(|d| d.date(tz)).unwrap_or(o.today());
         out.push(TaskRow {
-            entry: task_entry(store, t, day, o),
+            entry: task_entry_with(t, day, o, &progress),
             depth: 0,
             has_children: !kids.is_empty(),
         });
         for k in kids {
             let kd = k.f.due.map(|d| d.date(tz)).unwrap_or(day);
             out.push(TaskRow {
-                entry: task_entry(store, k, kd, o),
+                entry: task_entry_with(k, kd, o, &progress),
                 depth: 1,
                 has_children: false,
             });

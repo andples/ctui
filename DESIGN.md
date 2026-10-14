@@ -6,8 +6,10 @@ plain command-line tool that does the same things. Everything stays on your
 machine: no accounts, no server, no Google. You can bring a Google calendar
 over once with `ct import`.
 
-Status: plan only (2026-10-15). Nothing below is built yet, except the theme
-files in `themes/` (§10.1).
+Status (2026-10-15): M0–M8 are built, and M9's checks pass (first frame
+21 ms and a 5.8 MB binary with 2,000 items). The public release waits for
+the license decision (§16). Where the build differs from this plan, the
+plan was updated.
 
 ---
 
@@ -110,7 +112,8 @@ the config, and the default view is configurable.
   busier), plus a pane for the selected day. On narrow terminals the pane
   moves below the grid; on wide ones the cells get room for the first event
   titles.
-- `h/j/k/l` or the arrows move the day, `[`/`]` change month, `t` is today,
+- `h/j/k/l` or the arrows move the day, `J`/`K` pick an item in the day's
+  list (for `x`, `e`, `d`…), `[`/`]` change month, `t` is today,
   `g` goes to a date (typed with the same grammar: `g dec 24`, `g +2w`),
   `enter` opens that day in the Agenda.
 
@@ -181,8 +184,11 @@ Rules:
 - **Index:** load everything into memory at start-up. Thousands of small files
   parse in milliseconds. If that ever stops being true, add a cache
   (`state_dir/index.bin`, keyed by mtime) rather than switching formats.
-- **Times:** timed items store `TZID` with the local zone. All-day items use
-  `VALUE=DATE`. Floating times (no zone) from imports are shown as local.
+- **Times:** timed items store `TZID` with the local zone's IANA name. All-day
+  items use `VALUE=DATE`. Floating times (no zone) from imports, and unknown
+  zone names (Outlook's Windows names), are shown as local. ctui doesn't write
+  VTIMEZONE blocks for its own items (khal, Radicale and Thunderbird resolve
+  IANA names); imported items keep the VTIMEZONEs they came with.
 - **Deleting** removes the file and keeps a copy in `state_dir/trash/` so
   undo works. Trash is emptied after 30 days.
 
@@ -207,7 +213,7 @@ date). Words that aren't tokens make up the title. Order doesn't matter.
 | time | due time, or start time | `3pm` `15:00` `9.30` `noon` |
 | range / length | **makes it an event** | `3-4pm` `14:00-15:30` `3pm 1h` `for 45m` |
 | `allday` / date span | all-day event | `allday sat` `oct 20-22` |
-| `#list` | list (fuzzy, must exist, or `#new!` to create it) | `#work` `#pers` |
+| `#list` / `@list` | list (fuzzy, must exist, or `#new!` to create it). `@` because shells read `#` as a comment | `#work` `@pers` |
 | `!` `!!` `!!!` | priority | |
 | `every …` | repeat | `every day` `every weekday` `every 2 weeks` `every month on 1` `every year` |
 | `"…"` | literal title text, so `"fri"` stays a word | |
@@ -281,6 +287,7 @@ keymap, so it can't go out of date.
 | `m` | move: date or `#list`, same grammar |
 | `+` `-` | reschedule +1 day / −1 day (the most common edit, so it gets one key) |
 | `>` `<` | indent under the task above / outdent (Tasks view) |
+| `c` | theme picker (same as `:theme`) |
 | `t` | jump to today |
 | `[` `]` | previous / next period |
 | `g` | go to a date |
@@ -446,24 +453,28 @@ second consumer ever appears.
 
 ```
 src/
-  main.rs          clap: no args → tui::run, else cli::run
+  main.rs          clap: no args → tui::run (or the agenda when piped), else cli::run
   core/            UI-free. The only place that changes data.
-    model.rs       Item {Task|Event}, List, Priority, Repeat
-    store.rs       vdir load/save/watch, atomic writes, trash
-    ical.rs        Item ⇄ .ics with unknown-property passthrough
-    parse.rs       the grammar (§5) → Draft; Draft → preview text
-    query.rs       agenda(range), tasks(filter, sort), month(dots)
-    recur.rs       expansion, advance-on-done, overrides
-    undo.rs        journal of Ops (before/after snapshots), shared by CLI and TUI
-    ops.rs         Op enum: Add, Edit, Done, Move, Delete… → apply(&mut Store, now)
-    import.rs      ics/zip/Tasks.json → Ops (idempotent by UID)
-  cli/             subcommands → core::ops; text and json output
+    ical.rs        a small RFC 5545 reader/writer that keeps every property
+    time.rs        Moment (date / floating / zoned), durations, DST-safe math
+    model.rs       Item {Task|Event} with Fields; writes back only what changed
+    store.rs       vdir load/save/reload, atomic writes, trash, commit()
+    undo.rs        journal of file contents before/after, shared by CLI and TUI
+    parse.rs       the grammar (§5) → Draft (+ spans for colouring, preview text)
+    ops.rs         add, edit, done, move, shift, delete, subtasks, lists… → commit
+    query.rs       agenda, day/days, tasks, busy days, matching
+    recur.rs       expansion (rrule crate), overrides, next due, describe()
+    import.rs      ics / folders / zip / Tasks.json → plan → apply; export
+    remind.rs      alarms due in a window, last-run state
+  cli.rs           subcommands → core::ops; text and --json output
+  session.rs       paths + config + store + journal + theme, shared by both
+  theme.rs         themes, colours, list palette slots
+  config.rs        Config, Paths, :set
   tui/
-    app.rs         App state, Action enum, dispatch(Action), event loop
-    keys.rs        keymap (defaults + config), key → Action, help table
-    views/         agenda.rs, month.rs, tasks.rs: rendering only
-    widgets/       list (one selection look), addbar (input + live preview), toast, hints
-  config.rs        Config, Paths, themes
+    app.rs         App state, rows, dispatch(Action), input, mouse, `:` commands
+    keys.rs        keymap (defaults + [keys]), help table
+    view.rs        drawing only
+    tests.rs       TestBackend tests
 ```
 
 Conventions (from ttyp, where they worked):
@@ -478,12 +489,13 @@ Conventions (from ttyp, where they worked):
 
 ### Dependencies (kept short on purpose)
 
-`ratatui`, `crossterm`, `clap` (+ `clap_complete`), `serde`, `toml`,
-`directories`, `anyhow`, `icalendar` (parsing/writing; check its round-trip
-handling first, and keep the option of a small hand-written line parser),
-`rrule`, `chrono` + `chrono-tz` (needed by `rrule`), `uuid`, `zip` (import
-only; feature-gated if it bloats). No async runtime, no file-watch crate, no
-NLP crate.
+`ratatui`, `crossterm`, `clap` (+ `clap_complete`), `serde`, `serde_json`
+(`--json`, state files, Tasks.json), `toml`, `directories`, `anyhow`, `rrule`,
+`chrono` + `chrono-tz` (needed by `rrule`), `iana-time-zone` (the local
+zone's name for TZID), `uuid`, `zip` (deflate only). The iCalendar
+reader/writer is hand-written (`core/ical.rs`, ~200 lines) because perfect
+round-tripping of unknown properties mattered more than a crate's typed
+model. No async runtime, no file-watch crate, no NLP crate.
 
 ### Targets
 
