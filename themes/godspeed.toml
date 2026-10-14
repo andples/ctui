@@ -1,0 +1,15 @@
+# "Godspeed" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "godspeed"
+
+[colors]
+bg    = "#eae4cf"
+fg    = "#646669"
+sub   = "#ada998"
+main  = "#9abbcd"
+error = "#ca4754"
+
+# Lists without their own colour take these, in order.
+lists = ["#3f88ab", "#857ab6", "#ae6d8a", "#af7450", "#808441", "#3b9078"]

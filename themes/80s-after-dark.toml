@@ -1,0 +1,15 @@
+# "80s After Dark" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "80s-after-dark"
+
+[colors]
+bg    = "#1b1d36"
+fg    = "#e1e7ec"
+sub   = "#99d6ea"
+main  = "#fca6d1"
+error = "#fffb85"
+
+# Lists without their own colour take these, in order.
+lists = ["#fca6d1", "#ffaf85", "#cbcb70", "#71ddb7", "#72d2fd", "#c2bbff"]

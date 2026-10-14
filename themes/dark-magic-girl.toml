@@ -1,0 +1,15 @@
+# "Dark Magic Girl" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "dark-magic-girl"
+
+[colors]
+bg    = "#091f2c"
+fg    = "#a288d9"
+sub   = "#93e8d3"
+main  = "#f5b1cc"
+error = "#e45c96"
+
+# Lists without their own colour take these, in order.
+lists = ["#f7b0cc", "#f7b890", "#c7cf8a", "#87dbc3", "#8bd2f9", "#cabdfd"]

@@ -1,0 +1,15 @@
+# "Aurora" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "aurora"
+
+[colors]
+bg    = "#011926"
+fg    = "#ffffff"
+sub   = "#245c69"
+main  = "#00e980"
+error = "#b94da1"
+
+# Lists without their own colour take these, in order.
+lists = ["#6ce095", "#1edbfa", "#b1c0ff", "#fd9ded", "#feac9a", "#e5c13a"]

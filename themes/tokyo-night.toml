@@ -1,0 +1,13 @@
+# Colours from the Tokyo Night palette (https://github.com/enkia/tokyo-night-vscode-theme).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "tokyo-night"
+
+[colors]
+bg    = "#1a1b26"
+fg    = "#c0caf5"
+sub   = "#565f89"
+main  = "#7aa2f7"
+error = "#f7768e"
+
+# Lists without their own colour take these, in order.
+lists = ["#7aa2f7", "#9ece6a", "#ff9e64", "#bb9af7", "#7dcfff", "#e0af68"]

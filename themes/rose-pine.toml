@@ -1,0 +1,13 @@
+# Colours from the Rosé Pine palette (https://github.com/rose-pine/rose-pine-theme).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "rose-pine"
+
+[colors]
+bg    = "#191724"
+fg    = "#e0def4"
+sub   = "#6e6a86"
+main  = "#ebbcba"
+error = "#eb6f92"
+
+# Lists without their own colour take these, in order.
+lists = ["#ebbcba", "#9ccfd8", "#f6c177", "#c4a7e7", "#31748f"]

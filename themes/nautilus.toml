@@ -1,0 +1,15 @@
+# "Nautilus" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "nautilus"
+
+[colors]
+bg    = "#132237"
+fg    = "#1cbaac"
+sub   = "#0b4c6c"
+main  = "#ebb723"
+error = "#da3333"
+
+# Lists without their own colour take these, in order.
+lists = ["#e9b834", "#78d984", "#1ad7eb", "#a3befd", "#f19bf2", "#fea399"]

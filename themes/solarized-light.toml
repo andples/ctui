@@ -1,0 +1,13 @@
+# Colours from the Solarized palette (https://ethanschoonover.com/solarized/).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "solarized-light"
+
+[colors]
+bg    = "#fdf6e3"
+fg    = "#586e75"
+sub   = "#93a1a1"
+main  = "#268bd2"
+error = "#dc322f"
+
+# Lists without their own colour take these, in order.
+lists = ["#268bd2", "#859900", "#b58900", "#d33682", "#2aa198", "#6c71c4"]

@@ -1,0 +1,13 @@
+# Colours from the Nord palette (https://github.com/nordtheme/nord).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "nord"
+
+[colors]
+bg    = "#2e3440"
+fg    = "#d8dee9"
+sub   = "#616e88"
+main  = "#88c0d0"
+error = "#bf616a"
+
+# Lists without their own colour take these, in order.
+lists = ["#88c0d0", "#a3be8c", "#d08770", "#b48ead", "#ebcb8b", "#81a1c1"]

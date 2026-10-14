@@ -1,0 +1,13 @@
+# Colours from the Kanagawa palette (https://github.com/rebelot/kanagawa.nvim).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "kanagawa"
+
+[colors]
+bg    = "#1f1f28"
+fg    = "#dcd7ba"
+sub   = "#727169"
+main  = "#7e9cd8"
+error = "#e82424"
+
+# Lists without their own colour take these, in order.
+lists = ["#7e9cd8", "#98bb6c", "#e6c384", "#957fb8", "#7aa89f", "#ffa066", "#d27e99"]

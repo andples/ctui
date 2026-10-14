@@ -1,0 +1,15 @@
+# "Matrix" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "matrix"
+
+[colors]
+bg    = "#000000"
+fg    = "#d1ffcd"
+sub   = "#006500"
+main  = "#15ff00"
+error = "#da3333"
+
+# Lists without their own colour take these, in order.
+lists = ["#97ec8f", "#1beffc", "#bed4fc", "#f6bbfe", "#fec2bf", "#fecb68"]

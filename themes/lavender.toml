@@ -1,0 +1,15 @@
+# "Lavender" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "lavender"
+
+[colors]
+bg    = "#ada6c2"
+fg    = "#2f2a41"
+sub   = "#e4e3e9"
+main  = "#e4e3e9"
+error = "#ca4754"
+
+# Lists without their own colour take these, in order.
+lists = ["#5d5088", "#81435e", "#814b25", "#575d18", "#016451", "#105f82"]

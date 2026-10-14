@@ -1,0 +1,15 @@
+# ctui's default: your terminal's own 16 colours, so it matches whatever
+# theme the terminal already has. Named colours are the ANSI ones:
+# black red green yellow blue magenta cyan white, bright-<name>, and reset
+# (the terminal's default fg/bg).
+name = "default"
+
+[colors]
+bg    = "reset"
+fg    = "reset"
+sub   = "bright-black"
+main  = "yellow"
+error = "red"
+
+# Lists without their own colour take these, in order.
+lists = ["blue", "green", "magenta", "cyan", "yellow", "bright-red"]

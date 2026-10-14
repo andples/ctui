@@ -1,0 +1,15 @@
+# "Iceberg Light" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "iceberg-light"
+
+[colors]
+bg    = "#e8e9ec"
+fg    = "#33374c"
+sub   = "#adb1c4"
+main  = "#2d539e"
+error = "#cc517a"
+
+# Lists without their own colour take these, in order.
+lists = ["#2d539e", "#773a81", "#913134", "#6f510a", "#21681d", "#0b6369"]

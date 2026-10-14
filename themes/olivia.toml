@@ -1,0 +1,15 @@
+# "Olivia" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "olivia"
+
+[colors]
+bg    = "#1c1b1d"
+fg    = "#f2efed"
+sub   = "#4e3e3e"
+main  = "#deaf9d"
+error = "#bf616a"
+
+# Lists without their own colour take these, in order.
+lists = ["#eda88e", "#c6be79", "#84cea9", "#76c9e5", "#b1b4f4", "#e4a4cb"]

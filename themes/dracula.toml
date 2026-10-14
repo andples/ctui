@@ -1,0 +1,13 @@
+# Colours from the Dracula palette (https://github.com/dracula/dracula-theme).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "dracula"
+
+[colors]
+bg    = "#282a36"
+fg    = "#f8f8f2"
+sub   = "#6272a4"
+main  = "#bd93f9"
+error = "#ff5555"
+
+# Lists without their own colour take these, in order.
+lists = ["#bd93f9", "#50fa7b", "#ffb86c", "#ff79c6", "#8be9fd", "#f1fa8c"]

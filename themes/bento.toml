@@ -1,0 +1,15 @@
+# "Bento" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "bento"
+
+[colors]
+bg    = "#2d394d"
+fg    = "#fffaf8"
+sub   = "#4a768d"
+main  = "#ff7a90"
+error = "#ee2a3a"
+
+# Lists without their own colour take these, in order.
+lists = ["#f97f92", "#e49822", "#87be53", "#13c3be", "#66affd", "#ca8def"]

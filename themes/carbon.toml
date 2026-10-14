@@ -1,0 +1,15 @@
+# "Carbon" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "carbon"
+
+[colors]
+bg    = "#313131"
+fg    = "#f5e6c8"
+sub   = "#616161"
+main  = "#f66e0d"
+error = "#e72d2d"
+
+# Lists without their own colour take these, in order.
+lists = ["#e67b42", "#a7a111", "#0fb78a", "#17abda", "#978cf4", "#dd72ae"]

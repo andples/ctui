@@ -1,0 +1,13 @@
+# Colours from the Atom One Dark palette (https://github.com/atom/atom/tree/master/packages/one-dark-syntax).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "one-dark"
+
+[colors]
+bg    = "#282c34"
+fg    = "#abb2bf"
+sub   = "#5c6370"
+main  = "#61afef"
+error = "#e06c75"
+
+# Lists without their own colour take these, in order.
+lists = ["#61afef", "#98c379", "#e5c07b", "#c678dd", "#56b6c2", "#d19a66"]

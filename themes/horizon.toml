@@ -1,0 +1,15 @@
+# "Horizon" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "horizon"
+
+[colors]
+bg    = "#1c1e26"
+fg    = "#bbbbbb"
+sub   = "#db886f"
+main  = "#c4a88a"
+error = "#d55170"
+
+# Lists without their own colour take these, in order.
+lists = ["#d3a36e", "#9cb97b", "#62c0b9", "#80b3e4", "#be9ed9", "#df96a2"]

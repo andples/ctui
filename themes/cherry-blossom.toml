@@ -1,0 +1,15 @@
+# "Cherry Blossom" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "cherry-blossom"
+
+[colors]
+bg    = "#323437"
+fg    = "#d1d0c5"
+sub   = "#787d82"
+main  = "#d65ccc"
+error = "#ca4754"
+
+# Lists without their own colour take these, in order.
+lists = ["#c76fbe", "#e16c59", "#b39006", "#3dad62", "#05a7bc", "#728cf0"]

@@ -1,0 +1,15 @@
+# "Chaos Theory" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "chaos-theory"
+
+[colors]
+bg    = "#141221"
+fg    = "#dde5ed"
+sub   = "#676e8a"
+main  = "#fd77d7"
+error = "#fd77d7"
+
+# Lists without their own colour take these, in order.
+lists = ["#ed88ce", "#fe8b64", "#c7b11f", "#41cc8d", "#13c3ea", "#a0a7fe"]

@@ -1,0 +1,15 @@
+# "Miami Nights" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "miami-nights"
+
+[colors]
+bg    = "#18181a"
+fg    = "#ffffff"
+sub   = "#47bac0"
+main  = "#e4609b"
+error = "#fff591"
+
+# Lists without their own colour take these, in order.
+lists = ["#db6a9a", "#da7828", "#949f09", "#0cae91", "#0da1de", "#9d80e7"]

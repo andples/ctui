@@ -1,0 +1,15 @@
+# "Botanical" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "botanical"
+
+[colors]
+bg    = "#7b9c98"
+fg    = "#eaf1f3"
+sub   = "#495755"
+main  = "#eaf1f3"
+error = "#f6c9b4"
+
+# Lists without their own colour take these, in order.
+lists = ["#004f5e", "#3f457b", "#69365d", "#743726", "#554806", "#095431"]

@@ -1,0 +1,15 @@
+# "Paper" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "paper"
+
+[colors]
+bg    = "#eeeeee"
+fg    = "#444444"
+sub   = "#b2b2b2"
+main  = "#444444"
+error = "#d70000"
+
+# Lists without their own colour take these, in order.
+lists = ["#544207", "#175129", "#054d57", "#314074", "#5e305b", "#6c2f26"]

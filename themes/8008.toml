@@ -1,0 +1,15 @@
+# "8008" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "8008"
+
+[colors]
+bg    = "#333a45"
+fg    = "#e9ecf0"
+sub   = "#939eae"
+main  = "#f44c7f"
+error = "#da3333"
+
+# Lists without their own colour take these, in order.
+lists = ["#dd6785", "#ce7f0b", "#7ca32d", "#0aaa9f", "#329ae9", "#ab78db"]

@@ -1,0 +1,13 @@
+# Colours from the Catppuccin palette (https://github.com/catppuccin/catppuccin).
+# The list colours are its accent colours. See themes/CREDITS.md.
+name = "catppuccin-latte"
+
+[colors]
+bg    = "#eff1f5"
+fg    = "#4c4f69"
+sub   = "#9ca0b0"
+main  = "#8839ef"
+error = "#d20f39"
+
+# Lists without their own colour take these, in order.
+lists = ["#8839ef", "#1e66f5", "#40a02b", "#fe640b", "#179299", "#ea76cb"]

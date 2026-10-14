@@ -1,0 +1,15 @@
+# "Comfy" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "comfy"
+
+[colors]
+bg    = "#4a5b6e"
+fg    = "#f5efee"
+sub   = "#9ec1cc"
+main  = "#f8cdc6"
+error = "#c9465e"
+
+# Lists without their own colour take these, in order.
+lists = ["#fecac2", "#f1d693", "#afeab8", "#8eeaf8", "#c9d8fe", "#fac4f6"]

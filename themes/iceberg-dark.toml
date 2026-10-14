@@ -1,0 +1,15 @@
+# "Iceberg Dark" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "iceberg-dark"
+
+[colors]
+bg    = "#161821"
+fg    = "#c6c8d1"
+sub   = "#595e76"
+main  = "#84a0c6"
+error = "#e27878"
+
+# Lists without their own colour take these, in order.
+lists = ["#79a0d6", "#b48dc4", "#d0878b", "#be965c", "#84ab73", "#4fafb0"]

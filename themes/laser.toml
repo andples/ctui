@@ -1,0 +1,15 @@
+# "Laser" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "laser"
+
+[colors]
+bg    = "#221b44"
+fg    = "#dbe7e8"
+sub   = "#b82356"
+main  = "#009eaf"
+error = "#a8d400"
+
+# Lists without their own colour take these, in order.
+lists = ["#009eaf", "#7089cf", "#b073ae", "#c67166", "#a88831", "#5a9e65"]

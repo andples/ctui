@@ -6,7 +6,8 @@ plain command-line tool that does the same things. Everything stays on your
 machine: no accounts, no server, no Google. You can bring a Google calendar
 over once with `ct import`.
 
-Status: plan only (2026-10-15). Nothing below is built yet.
+Status: plan only (2026-10-15). Nothing below is built yet, except the theme
+files in `themes/` (§10.1).
 
 ---
 
@@ -138,13 +139,14 @@ missed.
 
 ## 4. Storage
 
-**Decision: iCalendar files in a vdir.** One `.ics` file per item, one folder
-per list:
+**Decision (owner, 2026-10-15): iCalendar files in a vdir.** One `.ics` file
+per item, one folder per list:
 
 ```
 ~/.local/share/ctui/            (data_dir, configurable)
   personal/
-    .ctui-list.toml             colour and display name (optional)
+    displayname                 the list's name as shown (optional)
+    color                       the list's colour, e.g. #88c0d0 (optional)
     3f9c…e1.ics                 one VTODO or VEVENT
   work/
     …
@@ -162,6 +164,10 @@ Why this over SQLite, JSON or our own format:
 - **Works alongside other tools:** khal, todoman, Thunderbird (via a CalDAV
   server).
 - **No lock-in**, ctui included.
+
+The `displayname` and `color` files follow vdirsyncer's `metasync` convention,
+so a calendar's name and colour on a CalDAV server arrive in ctui (and the
+other way round) with no extra code. There's no ctui-only metadata file.
 
 Rules:
 
@@ -351,11 +357,70 @@ data_dir     = "~/.local/share/ctui"   # point at a Syncthing/vdirsyncer folder
 done = ["x", "space"]
 ```
 
-Themes are TOML palettes in the same shape as ttyp's (`bg`, `fg`, `sub`,
-`main`, `done`, `overdue`, `today`, plus per-list colours from
-`.ctui-list.toml`). Only `default` and one light theme are built in.
-`bg = "reset"` uses the terminal's own background, and that is the default, so
-ctui fits any terminal theme out of the box.
+### 10.1 Themes
+
+Colour matters here: it's how you tell lists apart at a glance. So themes are
+first-class, but each one is still just a small TOML file.
+
+```toml
+name = "nord"
+
+[colors]
+bg    = "#2e3440"   # background ("reset" = the terminal's own)
+fg    = "#d8dee9"   # text
+sub   = "#616e88"   # secondary: times, hints, done items, borders
+main  = "#88c0d0"   # accent: selection, today, headings
+error = "#bf616a"   # overdue, delete toasts
+
+# Lists without their own colour take these, in order.
+lists = ["#88c0d0", "#a3be8c", "#d08770", "#b48ead", "#ebcb8b", "#81a1c1"]
+```
+
+- **Five colours plus a list palette.** Everything else is derived at run
+  time, so a theme stays five lines. The selected row's background is `main`
+  blended about 15% into `bg`. Done items use `sub`, overdue items use
+  `error`, today uses `main`, and borders are `sub` blended halfway into
+  `bg`. A theme can still set `select`, `done`, `overdue`, `today` or
+  `border` itself to override what's derived.
+- **Colours** can be `#rrggbb`, or ANSI names (`red`, `bright-black`, …,
+  `reset`) that follow the terminal's palette. When a colour is an ANSI name,
+  blending isn't possible, so the selected row is shown in bold with the
+  ` › ` marker instead of a background.
+- **List colours, in priority order:**
+  1. the list's `color` file (set with `ct lists color work #hex`, or synced
+     from CalDAV)
+  2. a palette slot pinned with `ct lists color work 3`, which follows theme
+     changes
+  3. otherwise, the next unused slot of the theme's `lists`, given the first
+     time ctui sees the list and remembered in the state dir, so colours
+     never shuffle when a list is added. They repeat after the palette runs
+     out.
+
+  `list_colors = "theme"` in the config ignores `color` files, so everything
+  follows the theme.
+- **Switching:** `:theme <name>` (fuzzy, with Tab completion) applies and
+  saves it straight away. `:theme` alone opens a picker that previews each
+  theme on the live screen as you move through it, then `enter` keeps it and
+  `esc` goes back. `ct theme ls` / `ct theme <name>` do the same from the
+  shell.
+- **Your own themes:** drop a file into `~/.config/ctui/themes/`. A user file
+  with the same name as a built-in replaces it. A broken file is reported
+  once and the default is used, so it never crashes.
+- **What ships** (`themes/` in the repo, 39 themes):
+  - `default`: the terminal's own 16 colours, so it matches any terminal
+    theme. It's the default theme.
+  - `light`: ctui's own.
+  - 12 from well-known palettes (Catppuccin Latte/Mocha, Dracula, Everforest,
+    gruvbox, Kanagawa, Nord, One Dark, Rosé Pine, Solarized Dark/Light,
+    Tokyo Night). Their accent colours are the list palette. Credited in
+    `themes/CREDITS.md`.
+  - 25 adapted from **[Monkeytype](https://github.com/monkeytypegame/monkeytype)**
+    (Serika, Serika Dark, 8008, Iceberg, Nautilus…), by way of ttyp. They're
+    GPL-3.0 and keep that license, with the header in each file and the full
+    list and mapping in `themes/MONKEYTYPE.md`. Monkeytype has no list
+    colours, so those are derived from each theme's `main` (OKLCH hue steps,
+    at least 3:1 contrast on `bg`).
+- **Built in or not** depends on the license (§16): see the open question.
 
 ---
 
@@ -458,7 +523,7 @@ Each one ends with something usable.
 | **M4** | Month view | grid, dots, day pane, `g`, `[` `]`, `ct cal`, responsive layouts |
 | **M5** | Recurrence | `every …`, expansion, advance-on-done, this/all edits |
 | **M6** | Import/export | `.ics`/dir/zip import, idempotent by UID, `--dry-run`, Tasks.json, export, the "Leaving Google" guide |
-| **M7** | Customization | keymap remapping, themes, `:set`, view list, date/time formats |
+| **M7** | Customization | keymap remapping, theme loading + live-preview picker + list colours (§10.1), `:set`, view list, date/time formats |
 | **M8** | Reminders | VALARM, `ct remind`, systemd timer example |
 | **M9** | Polish → 1.0 | performance targets checked, README, completions, then public release (crates.io / Homebrew / AUR, as with ttyp) when the owner decides |
 
@@ -483,12 +548,16 @@ list.
 
 ## 16. Open questions
 
-1. **Storage format.** The plan uses vdir + iCalendar (§4) for the free sync
-   and interoperability. The alternative is a simpler home-made format (TOML
-   per item) with `.ics` import/export only. This is the one decision that's
-   expensive to change later.
-2. **License** when it goes public: MIT like ttyp?
-3. Should `ct` itself be installed as a binary name? The plan says no: Arch's
+1. **License** (undecided; the repo stays private until then). This also
+   decides how the Monkeytype themes ship. They're GPL-3.0, and compiling
+   GPL files into the binary (`include_str!`) makes the binary GPL.
+   - If ctui is **GPL-3.0**, compile all 39 in. Simplest, and every theme
+     works offline from the first run.
+   - If ctui is **MIT** (like ttyp), compile in only `default`, `light` and the
+     12 MIT palettes. The 25 Monkeytype themes ship as separate files:
+     packages install them to `share/ctui/themes/`, and ctui reads that folder
+     as a second built-in source. `cargo install` users copy them by hand.
+     That's how ttyp avoids the issue too (its catalogue).
+2. Should `ct` itself be installed as a binary name? The plan says no: Arch's
    `extra/ct` (Flatcar config transpiler) also installs `/usr/bin/ct`, so the
    README suggests `alias ct=ctui` instead.
-4. Should a light theme be built in as well as the default, or only one?

@@ -1,0 +1,15 @@
+# "Superuser" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "superuser"
+
+[colors]
+bg    = "#262a33"
+fg    = "#e5f7ef"
+sub   = "#526777"
+main  = "#43ffaf"
+error = "#ff5f5f"
+
+# Lists without their own colour take these, in order.
+lists = ["#74f9b8", "#a2e7fd", "#d3d8fc", "#fdc8eb", "#ffcebd", "#f2dc59"]

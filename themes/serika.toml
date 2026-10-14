@@ -1,0 +1,15 @@
+# "Serika" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "serika"
+
+[colors]
+bg    = "#e1e1e3"
+fg    = "#323437"
+sub   = "#aaaeb3"
+main  = "#e2b714"
+error = "#da3333"
+
+# Lists without their own colour take these, in order.
+lists = ["#997b07", "#0e9148", "#0a8b9e", "#6279db", "#b75fad", "#cf5c49"]

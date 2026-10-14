@@ -1,0 +1,15 @@
+# "Modern Dolch" from Monkeytype (https://github.com/monkeytypegame/monkeytype),
+# GPL-3.0. bg, fg, sub, main and error are Monkeytype's bg, text, sub,
+# main and error; the list colours are derived from main (hue steps in
+# OKLCH, kept readable on bg). See themes/MONKEYTYPE.md.
+name = "modern-dolch"
+
+[colors]
+bg    = "#2d2e30"
+fg    = "#e3e6eb"
+sub   = "#54585c"
+main  = "#7eddd3"
+error = "#d36a7b"
+
+# Lists without their own colour take these, in order.
+lists = ["#7eddd3", "#9ecffc", "#d9baf9", "#feb0bf", "#f2be88", "#b9d594"]
