@@ -25,15 +25,25 @@ pub struct Store {
     signature: u64,
 }
 
-/// One change inside a commit.
+/// One change inside a commit. (Short-lived, so the big `Put` isn't boxed.)
 #[derive(Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum Change {
     /// Create or replace an item (moving its file if its list changed).
     Put(Item),
     Remove(String),
-    CreateList { id: String, name: Option<String> },
-    SetListName { id: String, name: Option<String> },
-    SetListColor { id: String, color: Option<String> },
+    CreateList {
+        id: String,
+        name: Option<String>,
+    },
+    SetListName {
+        id: String,
+        name: Option<String>,
+    },
+    SetListColor {
+        id: String,
+        color: Option<String>,
+    },
 }
 
 impl Store {
@@ -68,7 +78,10 @@ impl Store {
                 continue;
             }
             let read_meta = |n: &str| {
-                fs::read_to_string(path.join(n)).ok().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+                fs::read_to_string(path.join(n))
+                    .ok()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
             };
             lists.push(List {
                 name: read_meta("displayname").unwrap_or_else(|| id.clone()),
@@ -124,7 +137,10 @@ impl Store {
                         continue;
                     }
                 }
-                let mtime = meta.modified().ok().and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok());
+                let mtime = meta
+                    .modified()
+                    .ok()
+                    .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok());
                 seen.push((name, meta.len(), mtime));
             }
         }
@@ -159,7 +175,12 @@ impl Store {
     }
 
     /// Applies `changes` as one undoable step called `label`.
-    pub fn commit(&mut self, journal: &mut Journal, label: &str, changes: Vec<Change>) -> Result<()> {
+    pub fn commit(
+        &mut self,
+        journal: &mut Journal,
+        label: &str,
+        changes: Vec<Change>,
+    ) -> Result<()> {
         let mut planned: BTreeMap<String, Option<String>> = BTreeMap::new();
         let mut dirs = Vec::new();
         for ch in changes {
@@ -176,7 +197,9 @@ impl Store {
                     planned.insert(new_rel, Some(item.to_ics()));
                 }
                 Change::Remove(uid) => {
-                    let Some(old) = self.items.iter().find(|i| i.uid == uid) else { bail!("no item {uid}") };
+                    let Some(old) = self.items.iter().find(|i| i.uid == uid) else {
+                        bail!("no item {uid}")
+                    };
                     planned.insert(Self::rel(&old.list, &old.file), None);
                 }
                 Change::CreateList { id, name } => {
@@ -200,7 +223,11 @@ impl Store {
             if before == after {
                 continue;
             }
-            files.push(FileChange { path: rel, before, after });
+            files.push(FileChange {
+                path: rel,
+                before,
+                after,
+            });
         }
         for d in &dirs {
             fs::create_dir_all(self.root.join(d))?;
@@ -215,8 +242,16 @@ impl Store {
     /// Writes (or removes) files; removed files go to the trash.
     pub(crate) fn write_changes(&self, files: &[FileChange], forward: bool) -> Result<()> {
         // A file that only moved (its content is written elsewhere) isn't trashed.
-        let written: Vec<&String> =
-            files.iter().filter_map(|f| if forward { f.after.as_ref() } else { f.before.as_ref() }).collect();
+        let written: Vec<&String> = files
+            .iter()
+            .filter_map(|f| {
+                if forward {
+                    f.after.as_ref()
+                } else {
+                    f.before.as_ref()
+                }
+            })
+            .collect();
         for fc in files {
             let path = self.abs(&fc.path);
             let content = if forward { &fc.after } else { &fc.before };
@@ -233,7 +268,8 @@ impl Store {
                         if !old.as_ref().is_some_and(|o| written.contains(&o)) {
                             self.to_trash(&fc.path, &path);
                         }
-                        fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
+                        fs::remove_file(&path)
+                            .with_context(|| format!("removing {}", path.display()))?;
                     }
                 }
             }
@@ -247,8 +283,14 @@ impl Store {
         if fs::create_dir_all(&trash).is_err() {
             return;
         }
-        let stamp = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let _ = fs::copy(path, trash.join(format!("{stamp}-{}", rel.replace('/', "__"))));
+        let stamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = fs::copy(
+            path,
+            trash.join(format!("{stamp}-{}", rel.replace('/', "__"))),
+        );
     }
 
     /// Removes an empty list folder (its metadata files included).
@@ -313,7 +355,9 @@ fn purge_trash(dir: &Path, older_than: StdDuration) {
 pub fn validate_list_id(id: &str) -> Result<()> {
     if id.is_empty()
         || id.starts_with('.')
-        || !id.chars().all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        || !id
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
     {
         bail!("list names are letters, digits, - _ and . ({id:?} isn't)");
     }
@@ -331,7 +375,11 @@ pub fn slug(name: &str) -> String {
         }
     }
     let out = out.trim_end_matches('-').to_string();
-    if out.is_empty() { "calendar".into() } else { out }
+    if out.is_empty() {
+        "calendar".into()
+    } else {
+        out
+    }
 }
 
 /// `#rgb`/`#rrggbb`/`#rrggbbaa` (as CalDAV servers write them) → `#rrggbb`.
@@ -368,8 +416,17 @@ mod tests {
         let now = Tz::UTC.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap();
         let mut s = Store::open(&dir.join("data"), Some(&dir.join("state"))).unwrap();
         let mut j = Journal::load(&dir.join("state"));
-        let it = Item::new(Kind::Task, "personal", Fields { title: "milk".into(), ..Fields::default() }, now);
-        s.commit(&mut j, "add", vec![Change::Put(it.clone())]).unwrap();
+        let it = Item::new(
+            Kind::Task,
+            "personal",
+            Fields {
+                title: "milk".into(),
+                ..Fields::default()
+            },
+            now,
+        );
+        s.commit(&mut j, "add", vec![Change::Put(it.clone())])
+            .unwrap();
         assert_eq!(s.items.len(), 1);
         assert_eq!(s.lists[0].id, "personal");
 
@@ -379,7 +436,8 @@ mod tests {
         assert_eq!(s.items[0].list, "work");
         assert!(!dir.join("data/personal").join(&it.file).exists());
 
-        s.commit(&mut j, "rm", vec![Change::Remove(it.uid.clone())]).unwrap();
+        s.commit(&mut j, "rm", vec![Change::Remove(it.uid.clone())])
+            .unwrap();
         assert!(s.items.is_empty());
         assert_eq!(fs::read_dir(dir.join("state/trash")).unwrap().count(), 1);
 
@@ -398,8 +456,17 @@ mod tests {
         let now = Tz::UTC.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap();
         let mut s = Store::open(&dir.join("data"), None).unwrap();
         let mut j = Journal::load(&dir.join("state"));
-        let it = Item::new(Kind::Task, "p", Fields { title: "a".into(), ..Fields::default() }, now);
-        s.commit(&mut j, "add", vec![Change::Put(it.clone())]).unwrap();
+        let it = Item::new(
+            Kind::Task,
+            "p",
+            Fields {
+                title: "a".into(),
+                ..Fields::default()
+            },
+            now,
+        );
+        s.commit(&mut j, "add", vec![Change::Put(it.clone())])
+            .unwrap();
         fs::write(dir.join("data/p").join(&it.file), "changed").unwrap();
         assert!(j.undo(&mut s).is_err());
         assert!(s.changed_on_disk());

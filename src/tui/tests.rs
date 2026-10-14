@@ -1,0 +1,255 @@
+//! TUI tests on ratatui's TestBackend: every view at several sizes, typing,
+//! undo, the theme picker and mouse clicks.
+
+use chrono::TimeZone;
+use chrono_tz::Tz;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::Terminal;
+use ratatui::backend::TestBackend;
+
+use super::app::{App, Mode};
+use super::view;
+use crate::config::{Config, Paths, View};
+use crate::session::Session;
+
+struct T {
+    app: App,
+    dir: std::path::PathBuf,
+}
+
+impl Drop for T {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn setup(name: &str) -> T {
+    let dir = std::env::temp_dir().join(format!("ctui-tui-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let paths = Paths {
+        config_dir: dir.join("c"),
+        data_dir: dir.join("d"),
+        state_dir: dir.join("s"),
+    };
+    let mut s = Session::open(paths, Config::default()).unwrap();
+    s.tz = Tz::Europe__London;
+    s.fixed_now = Some(
+        Tz::Europe__London
+            .with_ymd_and_hms(2026, 10, 15, 12, 0, 0)
+            .unwrap(),
+    );
+    for text in [
+        "renew passport 2026-10-13",
+        "pay rent fri !",
+        "dentist sat 2-3pm #health!",
+        "standup every weekday 9:30-9:45 #work!",
+        "buy milk",
+        "plan trip",
+    ] {
+        let (store, journal, env) = s.parts();
+        crate::core::ops::add(store, journal, &env, text, None, &Default::default()).unwrap();
+    }
+    s.refresh_slots();
+    T {
+        app: App::new(s),
+        dir,
+    }
+}
+
+fn screen(app: &mut App, w: u16, h: u16) -> String {
+    let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+    term.draw(|f| view::draw(f, app)).unwrap();
+    let buf = term.backend().buffer().clone();
+    let mut out = String::new();
+    for y in 0..h {
+        for x in 0..w {
+            out.push_str(buf[(x, y)].symbol());
+        }
+        out.push('\n');
+    }
+    out
+}
+
+fn key(app: &mut App, c: char) {
+    app.key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE));
+}
+
+fn typed(app: &mut App, s: &str) {
+    for c in s.chars() {
+        key(app, c);
+    }
+}
+
+fn enter(app: &mut App) {
+    app.key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+}
+
+#[test]
+fn every_view_draws_at_every_size() {
+    let mut t = setup("sizes");
+    for v in [View::Agenda, View::Month, View::Tasks] {
+        t.app.view = v;
+        t.app.rebuild();
+        for (w, h) in [(40, 12), (60, 20), (80, 24), (120, 40), (200, 60), (20, 6)] {
+            let s = screen(&mut t.app, w, h);
+            assert!(s.contains("ctui"), "{v:?} {w}x{h}");
+        }
+    }
+    t.app.view = View::Agenda;
+    t.app.rebuild();
+    let s = screen(&mut t.app, 100, 30);
+    for want in [
+        "Overdue",
+        "Today · Thu 15",
+        "renew passport",
+        "standup",
+        "pay rent",
+        "#health",
+    ] {
+        assert!(s.contains(want), "missing {want}:\n{s}");
+    }
+}
+
+#[test]
+fn add_tick_undo() {
+    let mut t = setup("add");
+    let before = t.app.s.store.items.len();
+    key(&mut t.app, 'a');
+    typed(&mut t.app, "call bob tom 3pm");
+    let s = screen(&mut t.app, 100, 30);
+    assert!(
+        s.contains("task · due Fri 16 Oct 15:00"),
+        "live preview:\n{s}"
+    );
+    enter(&mut t.app);
+    assert_eq!(t.app.s.store.items.len(), before + 1);
+    assert_eq!(
+        t.app.selected().unwrap().title,
+        "call bob",
+        "the new item is selected"
+    );
+    key(&mut t.app, 'x');
+    let uid = t.app.selected().unwrap().uid.clone();
+    assert!(t.app.s.store.get(&uid).unwrap().f.done);
+    key(&mut t.app, 'u');
+    assert!(!t.app.s.store.get(&uid).unwrap().f.done);
+    // A bad list keeps the text open with the error.
+    key(&mut t.app, 'a');
+    typed(&mut t.app, "x #nope");
+    enter(&mut t.app);
+    assert!(matches!(t.app.mode, Mode::Input(_)));
+    assert!(t.app.toast.as_ref().is_some_and(|(_, bad)| *bad));
+}
+
+#[test]
+fn theme_picker_previews_and_restores() {
+    let mut t = setup("theme");
+    let original = t.app.s.theme.clone();
+    key(&mut t.app, 'c');
+    key(&mut t.app, 'j');
+    assert_ne!(t.app.s.theme, original, "moving previews");
+    t.app.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(t.app.s.theme, original, "esc goes back");
+    assert_eq!(t.app.s.cfg.theme, "default");
+    key(&mut t.app, 'c');
+    key(&mut t.app, 'j');
+    enter(&mut t.app);
+    assert_ne!(t.app.s.cfg.theme, "default", "enter keeps it");
+}
+
+#[test]
+fn command_line_runs_ct_commands() {
+    let mut t = setup("cmd");
+    key(&mut t.app, ':');
+    typed(&mut t.app, "set week_start sunday");
+    enter(&mut t.app);
+    assert_eq!(t.app.s.cfg.week_start, chrono::Weekday::Sun);
+    key(&mut t.app, ':');
+    typed(&mut t.app, "ls all");
+    enter(&mut t.app);
+    assert!(matches!(t.app.mode, Mode::Output { .. }));
+    t.app.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    key(&mut t.app, ':');
+    typed(&mut t.app, "nonsense");
+    enter(&mut t.app);
+    assert!(matches!(t.app.mode, Mode::Output { .. } | Mode::Normal));
+}
+
+#[test]
+fn mouse_ticks_and_switches() {
+    let mut t = setup("mouse");
+    t.app.view = View::Tasks;
+    t.app.rebuild();
+    screen(&mut t.app, 100, 30);
+    let (rect, idx) = t
+        .app
+        .hits
+        .iter()
+        .find_map(|(r, h)| match h {
+            super::app::Hit::Check(i) => Some((*r, *i)),
+            _ => None,
+        })
+        .unwrap();
+    let uid = t.app.rows[idx].entry().unwrap().uid.clone();
+    t.app.mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: rect.x,
+        row: rect.y,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert!(
+        t.app.s.store.get(&uid).unwrap().f.done,
+        "clicking the box ticks it"
+    );
+    let tab = t
+        .app
+        .hits
+        .iter()
+        .find_map(|(r, h)| matches!(h, super::app::Hit::View(View::Month)).then_some(*r))
+        .unwrap();
+    t.app.mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: tab.x,
+        row: tab.y,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert_eq!(t.app.view, View::Month);
+}
+
+#[test]
+fn month_navigation() {
+    let mut t = setup("month");
+    key(&mut t.app, '2');
+    assert_eq!(t.app.view, View::Month);
+    key(&mut t.app, 'l');
+    key(&mut t.app, 'l');
+    assert_eq!(t.app.month_day.to_string(), "2026-10-17");
+    assert_eq!(t.app.selected().unwrap().title, "dentist");
+    key(&mut t.app, ']');
+    assert_eq!(t.app.month_day.to_string(), "2026-11-17");
+    key(&mut t.app, 't');
+    assert_eq!(t.app.month_day.to_string(), "2026-10-15");
+    key(&mut t.app, 'g');
+    typed(&mut t.app, "dec 24");
+    enter(&mut t.app);
+    assert_eq!(t.app.month_day.to_string(), "2026-12-24");
+}
+
+#[test]
+fn subtasks_in_tasks_view() {
+    let mut t = setup("sub");
+    key(&mut t.app, '3');
+    // Select "buy milk" and put it under the task above it.
+    let i = t
+        .app
+        .rows
+        .iter()
+        .position(|r| r.entry().is_some_and(|e| e.title == "buy milk"))
+        .unwrap();
+    t.app.sel = i;
+    key(&mut t.app, '>');
+    let uid = t.app.selected().unwrap().uid.clone();
+    assert!(t.app.s.store.get(&uid).unwrap().f.parent.is_some());
+    key(&mut t.app, '<');
+    assert!(t.app.s.store.get(&uid).unwrap().f.parent.is_none());
+}

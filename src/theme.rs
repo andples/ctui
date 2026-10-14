@@ -20,7 +20,9 @@ pub enum Color {
     Rgb(u8, u8, u8),
 }
 
-const ANSI: [&str; 8] = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"];
+const ANSI: [&str; 8] = [
+    "black", "red", "green", "yellow", "blue", "magenta", "cyan", "white",
+];
 
 impl Color {
     pub fn parse(s: &str) -> Result<Self> {
@@ -34,14 +36,22 @@ impl Color {
                 6 => h.to_string(),
                 _ => bail!("{s:?} isn't #rgb or #rrggbb"),
             };
-            let v = u32::from_str_radix(&full, 16).with_context(|| format!("{s:?} isn't a hex colour"))?;
+            let v = u32::from_str_radix(&full, 16)
+                .with_context(|| format!("{s:?} isn't a hex colour"))?;
             return Ok(Color::Rgb((v >> 16) as u8, (v >> 8) as u8, v as u8));
         }
-        let (bright, name) = match s.strip_prefix("bright-").or_else(|| s.strip_prefix("bright_")) {
+        let (bright, name) = match s
+            .strip_prefix("bright-")
+            .or_else(|| s.strip_prefix("bright_"))
+        {
             Some(n) => (true, n),
             None => (false, s.as_str()),
         };
-        let name = if name == "gray" || name == "grey" { if bright { "white" } else { "black" } } else { name };
+        let name = if name == "gray" || name == "grey" {
+            if bright { "white" } else { "black" }
+        } else {
+            name
+        };
         let bright = bright || s == "gray" || s == "grey";
         match ANSI.iter().position(|a| *a == name) {
             Some(i) => Ok(Color::Ansi(i as u8 + if bright { 8 } else { 0 })),
@@ -108,10 +118,19 @@ impl Theme {
     pub fn parse(text: &str, fallback_name: &str) -> Result<Self> {
         let f: ThemeFile = toml::from_str(text)?;
         let c = &f.colors;
-        let (bg, fg, sub, main, error) =
-            (Color::parse(&c.bg)?, Color::parse(&c.fg)?, Color::parse(&c.sub)?, Color::parse(&c.main)?, Color::parse(&c.error)?);
+        let (bg, fg, sub, main, error) = (
+            Color::parse(&c.bg)?,
+            Color::parse(&c.fg)?,
+            Color::parse(&c.sub)?,
+            Color::parse(&c.main)?,
+            Color::parse(&c.error)?,
+        );
         let opt = |v: &Option<String>| v.as_deref().map(Color::parse).transpose();
-        let mut lists = c.lists.iter().map(|s| Color::parse(s)).collect::<Result<Vec<_>>>()?;
+        let mut lists = c
+            .lists
+            .iter()
+            .map(|s| Color::parse(s))
+            .collect::<Result<Vec<_>>>()?;
         if lists.is_empty() {
             lists.push(main);
         }
@@ -146,15 +165,49 @@ macro_rules! themes {
 /// Compiled-in themes. The Monkeytype ones (GPL-3.0) only with the
 /// `monkeytype-themes` feature; otherwise they load from a themes folder.
 const BUILTIN: &[(&str, &str)] = themes!(
-    "default", "light", "catppuccin-latte", "catppuccin-mocha", "dracula", "everforest", "gruvbox", "kanagawa", "nord",
-    "one-dark", "rose-pine", "solarized-dark", "solarized-light", "tokyo-night",
+    "default",
+    "light",
+    "catppuccin-latte",
+    "catppuccin-mocha",
+    "dracula",
+    "everforest",
+    "gruvbox",
+    "kanagawa",
+    "nord",
+    "one-dark",
+    "rose-pine",
+    "solarized-dark",
+    "solarized-light",
+    "tokyo-night",
 );
 
 #[cfg(feature = "monkeytype-themes")]
 const MONKEYTYPE: &[(&str, &str)] = themes!(
-    "8008", "80s-after-dark", "aurora", "bento", "botanical", "carbon", "chaos-theory", "cherry-blossom", "comfy",
-    "dark-magic-girl", "godspeed", "horizon", "iceberg-dark", "iceberg-light", "laser", "lavender", "matrix",
-    "miami-nights", "modern-dolch", "nautilus", "olivia", "paper", "serika-dark", "serika", "superuser",
+    "8008",
+    "80s-after-dark",
+    "aurora",
+    "bento",
+    "botanical",
+    "carbon",
+    "chaos-theory",
+    "cherry-blossom",
+    "comfy",
+    "dark-magic-girl",
+    "godspeed",
+    "horizon",
+    "iceberg-dark",
+    "iceberg-light",
+    "laser",
+    "lavender",
+    "matrix",
+    "miami-nights",
+    "modern-dolch",
+    "nautilus",
+    "olivia",
+    "paper",
+    "serika-dark",
+    "serika",
+    "superuser",
 );
 #[cfg(not(feature = "monkeytype-themes"))]
 const MONKEYTYPE: &[(&str, &str)] = &[];
@@ -170,19 +223,20 @@ pub enum Origin {
 /// dirs), then the user's `~/.config/ctui/themes`.
 pub fn theme_dirs(user_dir: &Path) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
-    let data_dirs = std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+    let data_dirs =
+        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
     for d in data_dirs.split(':').filter(|d| !d.is_empty()).rev() {
         dirs.push(Path::new(d).join("ctui/themes"));
     }
-    if let Ok(exe) = std::env::current_exe().and_then(fs::canonicalize) {
-        if let Some(prefix) = exe.parent().and_then(Path::parent) {
-            dirs.push(prefix.join("share/ctui/themes"));
-            // Running from a checkout (target/release/ctui): the repo's themes/.
-            if let Some(repo) = prefix.parent() {
-                if repo.join("themes/MONKEYTYPE.md").exists() {
-                    dirs.push(repo.join("themes"));
-                }
-            }
+    if let Ok(exe) = std::env::current_exe().and_then(fs::canonicalize)
+        && let Some(prefix) = exe.parent().and_then(Path::parent)
+    {
+        dirs.push(prefix.join("share/ctui/themes"));
+        // Running from a checkout (target/release/ctui): the repo's themes/.
+        if let Some(repo) = prefix.parent()
+            && repo.join("themes/MONKEYTYPE.md").exists()
+        {
+            dirs.push(repo.join("themes"));
         }
     }
     dirs.push(user_dir.to_path_buf());
@@ -199,10 +253,10 @@ pub fn available(user_dir: &Path) -> BTreeMap<String, Origin> {
         let Ok(rd) = fs::read_dir(&dir) else { continue };
         for e in rd.flatten() {
             let p = e.path();
-            if p.extension().is_some_and(|x| x == "toml") {
-                if let Some(stem) = p.file_stem() {
-                    out.insert(stem.to_string_lossy().to_string(), Origin::File(p));
-                }
+            if p.extension().is_some_and(|x| x == "toml")
+                && let Some(stem) = p.file_stem()
+            {
+                out.insert(stem.to_string_lossy().to_string(), Origin::File(p));
             }
         }
     }
@@ -217,7 +271,12 @@ pub fn load(name: &str, user_dir: &Path) -> Result<Theme> {
             Theme::parse(&text, name).with_context(|| format!("theme {}", p.display()))
         }
         Some(Origin::Builtin) => {
-            let text = BUILTIN.iter().chain(MONKEYTYPE).find(|(n, _)| *n == name).map(|(_, t)| *t).expect("listed");
+            let text = BUILTIN
+                .iter()
+                .chain(MONKEYTYPE)
+                .find(|(n, _)| *n == name)
+                .map(|(_, t)| *t)
+                .expect("listed");
             Theme::parse(text, name)
         }
         None => bail!("no theme {name:?}"),
@@ -228,7 +287,10 @@ pub fn load(name: &str, user_dir: &Path) -> Result<Theme> {
 pub fn load_or_default(name: &str, user_dir: &Path) -> (Theme, Option<String>) {
     match load(name, user_dir) {
         Ok(t) => (t, None),
-        Err(e) => (Theme::fallback(), Some(format!("{e:#}; using the default theme"))),
+        Err(e) => (
+            Theme::fallback(),
+            Some(format!("{e:#}; using the default theme")),
+        ),
     }
 }
 
@@ -243,8 +305,14 @@ pub struct Slots {
 impl Slots {
     pub fn load(state_dir: &Path) -> Self {
         let path = state_dir.join("list-colors.toml");
-        let map = fs::read_to_string(&path).ok().and_then(|t| toml::from_str(&t).ok()).unwrap_or_default();
-        Self { path: Some(path), map }
+        let map = fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| toml::from_str(&t).ok())
+            .unwrap_or_default();
+        Self {
+            path: Some(path),
+            map,
+        }
     }
 
     /// Gives every list without a slot the lowest free one; saves if any changed.
@@ -259,25 +327,28 @@ impl Slots {
             self.map.insert(l.id.clone(), slot);
             changed = true;
         }
-        if changed {
-            if let Some(p) = &self.path {
-                if let Some(d) = p.parent() {
-                    let _ = fs::create_dir_all(d);
-                }
-                let _ = fs::write(p, toml::to_string(&self.map).unwrap_or_default());
+        if changed && let Some(p) = &self.path {
+            if let Some(d) = p.parent() {
+                let _ = fs::create_dir_all(d);
             }
+            let _ = fs::write(p, toml::to_string(&self.map).unwrap_or_default());
         }
     }
 }
 
 /// A list's colour: its `color` file, a pinned slot, then its remembered slot.
 pub fn list_color(list: &List, theme: &Theme, cfg: &Config, slots: &Slots) -> Color {
-    if cfg.list_colors == ListColors::File {
-        if let Some(c) = list.color.as_deref().and_then(|c| Color::parse(c).ok()) {
-            return c;
-        }
+    if cfg.list_colors == ListColors::File
+        && let Some(c) = list.color.as_deref().and_then(|c| Color::parse(c).ok())
+    {
+        return c;
     }
-    let slot = cfg.list_slots.get(&list.id).or_else(|| slots.map.get(&list.id)).copied().unwrap_or(0);
+    let slot = cfg
+        .list_slots
+        .get(&list.id)
+        .or_else(|| slots.map.get(&list.id))
+        .copied()
+        .unwrap_or(0);
     theme.lists[slot % theme.lists.len()]
 }
 
@@ -292,7 +363,8 @@ mod tests {
         for e in fs::read_dir(&dir).unwrap().flatten() {
             let p = e.path();
             if p.extension().is_some_and(|x| x == "toml") {
-                let t = Theme::parse(&fs::read_to_string(&p).unwrap(), "x").unwrap_or_else(|e| panic!("{}: {e}", p.display()));
+                let t = Theme::parse(&fs::read_to_string(&p).unwrap(), "x")
+                    .unwrap_or_else(|e| panic!("{}: {e}", p.display()));
                 assert!(!t.lists.is_empty());
                 n += 1;
             }
@@ -311,13 +383,21 @@ mod tests {
         assert!(Color::parse("chartreuse").is_err());
         let d = Theme::fallback();
         assert_eq!(d.select, None, "ANSI themes can't blend");
-        let nord = Theme::parse(BUILTIN.iter().find(|(n, _)| *n == "nord").unwrap().1, "nord").unwrap();
+        let nord = Theme::parse(
+            BUILTIN.iter().find(|(n, _)| *n == "nord").unwrap().1,
+            "nord",
+        )
+        .unwrap();
         assert!(nord.select.is_some());
     }
 
     #[test]
     fn slots_are_stable() {
-        let mk = |id: &str| List { id: id.into(), name: id.into(), color: None };
+        let mk = |id: &str| List {
+            id: id.into(),
+            name: id.into(),
+            color: None,
+        };
         let mut s = Slots::default();
         s.assign(&[mk("b"), mk("a")]);
         s.assign(&[mk("a"), mk("c"), mk("b")]);
@@ -329,7 +409,10 @@ mod tests {
         assert_eq!(list_color(&mk("a"), &theme, &cfg, &s), theme.lists[3]);
         let mut colored = mk("a");
         colored.color = Some("#ff0000".into());
-        assert_eq!(list_color(&colored, &theme, &cfg, &s), Color::Rgb(255, 0, 0));
+        assert_eq!(
+            list_color(&colored, &theme, &cfg, &s),
+            Color::Rgb(255, 0, 0)
+        );
         cfg.list_colors = ListColors::Theme;
         assert_eq!(list_color(&colored, &theme, &cfg, &s), theme.lists[3]);
     }

@@ -21,16 +21,24 @@ pub struct Prop {
 
 impl Prop {
     pub fn new(name: &str, value: impl Into<String>) -> Self {
-        Self { name: name.to_ascii_uppercase(), params: Vec::new(), value: value.into() }
+        Self {
+            name: name.to_ascii_uppercase(),
+            params: Vec::new(),
+            value: value.into(),
+        }
     }
 
     pub fn with_param(mut self, name: &str, value: &str) -> Self {
-        self.params.push((name.to_ascii_uppercase(), value.to_string()));
+        self.params
+            .push((name.to_ascii_uppercase(), value.to_string()));
         self
     }
 
     pub fn param(&self, name: &str) -> Option<&str> {
-        self.params.iter().find(|(n, _)| n.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+        self.params
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.as_str())
     }
 
     /// The value as text, with `\n`, `\,`, `\;` and `\\` unescaped.
@@ -49,15 +57,22 @@ pub struct Component {
 
 impl Component {
     pub fn new(name: &str) -> Self {
-        Self { name: name.to_ascii_uppercase(), ..Self::default() }
+        Self {
+            name: name.to_ascii_uppercase(),
+            ..Self::default()
+        }
     }
 
     pub fn get(&self, name: &str) -> Option<&Prop> {
-        self.props.iter().find(|p| p.name.eq_ignore_ascii_case(name))
+        self.props
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(name))
     }
 
     pub fn get_all<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Prop> + 'a {
-        self.props.iter().filter(move |p| p.name.eq_ignore_ascii_case(name))
+        self.props
+            .iter()
+            .filter(move |p| p.name.eq_ignore_ascii_case(name))
     }
 
     pub fn text(&self, name: &str) -> Option<String> {
@@ -93,7 +108,9 @@ impl Component {
     }
 
     pub fn children_named<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Component> + 'a {
-        self.children.iter().filter(move |c| c.name.eq_ignore_ascii_case(name))
+        self.children
+            .iter()
+            .filter(move |c| c.name.eq_ignore_ascii_case(name))
     }
 }
 
@@ -135,11 +152,11 @@ fn unfold(text: &str) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     for raw in text.split('\n') {
         let raw = raw.strip_suffix('\r').unwrap_or(raw);
-        if let Some(rest) = raw.strip_prefix([' ', '\t']) {
-            if let Some(last) = lines.last_mut() {
-                last.push_str(rest);
-                continue;
-            }
+        if let Some(rest) = raw.strip_prefix([' ', '\t'])
+            && let Some(last) = lines.last_mut()
+        {
+            last.push_str(rest);
+            continue;
         }
         if !raw.trim().is_empty() {
             lines.push(raw.to_string());
@@ -162,7 +179,9 @@ fn parse_line(line: &str) -> Result<Prop> {
             _ => {}
         }
     }
-    let Some(colon) = split else { bail!("no ':' in line {line:?}") };
+    let Some(colon) = split else {
+        bail!("no ':' in line {line:?}")
+    };
     let (head, value) = (&line[..colon], &line[colon + 1..]);
     let mut parts = Vec::new();
     let mut cur = String::new();
@@ -181,9 +200,16 @@ fn parse_line(line: &str) -> Result<Prop> {
     }
     let params = parts
         .into_iter()
-        .filter_map(|p| p.split_once('=').map(|(n, v)| (n.trim().to_ascii_uppercase(), v.to_string())))
+        .filter_map(|p| {
+            p.split_once('=')
+                .map(|(n, v)| (n.trim().to_ascii_uppercase(), v.to_string()))
+        })
         .collect();
-    Ok(Prop { name, params, value: value.to_string() })
+    Ok(Prop {
+        name,
+        params,
+        value: value.to_string(),
+    })
 }
 
 /// Parses every top-level component in `text` (usually one `VCALENDAR`).
@@ -201,7 +227,9 @@ pub fn parse(text: &str) -> Result<Vec<Component>> {
         match prop.name.as_str() {
             "BEGIN" => stack.push(Component::new(prop.value.trim())),
             "END" => {
-                let Some(done) = stack.pop() else { bail!("END:{} without BEGIN", prop.value) };
+                let Some(done) = stack.pop() else {
+                    bail!("END:{} without BEGIN", prop.value)
+                };
                 if !done.name.eq_ignore_ascii_case(prop.value.trim()) {
                     bail!("END:{} closes BEGIN:{}", prop.value, done.name);
                 }
@@ -286,7 +314,10 @@ mod tests {
         assert_eq!(ev.name, "VEVENT");
         assert_eq!(ev.text("SUMMARY").unwrap(), "Stand, up; daily");
         assert!(ev.text("DESCRIPTION").unwrap().ends_with("and keeps going"));
-        assert_eq!(ev.get("DTSTART").unwrap().param("tzid"), Some("Europe/London"));
+        assert_eq!(
+            ev.get("DTSTART").unwrap().param("tzid"),
+            Some("Europe/London")
+        );
         let att = ev.get("ATTENDEE").unwrap();
         assert_eq!(att.param("CN"), Some("Doe, Jane"));
         assert_eq!(att.value, "mailto:jane@example.com");

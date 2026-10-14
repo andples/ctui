@@ -65,7 +65,9 @@ impl Opts {
         if !item.f.done {
             return true;
         }
-        let Some(at) = item.f.completed else { return false };
+        let Some(at) = item.f.completed else {
+            return false;
+        };
         let local = at.with_timezone(&self.tz);
         if local.date_naive() == self.today() {
             return true;
@@ -78,7 +80,11 @@ impl Opts {
 }
 
 fn progress(store: &Store, uid: &str) -> Option<(usize, usize)> {
-    let kids: Vec<&Item> = store.items.iter().filter(|c| c.f.parent.as_deref() == Some(uid)).collect();
+    let kids: Vec<&Item> = store
+        .items
+        .iter()
+        .filter(|c| c.f.parent.as_deref() == Some(uid))
+        .collect();
     (!kids.is_empty()).then(|| (kids.iter().filter(|c| c.f.done).count(), kids.len()))
 }
 
@@ -90,7 +96,10 @@ fn task_entry(store: &Store, item: &Item, day: NaiveDate, o: &Opts) -> Entry {
             Some(_) => d.instant(tz) < o.now,
             None => d.date(tz) < o.today(),
         });
-    let now = !item.f.done && due.is_some_and(|d| d.time(tz).is_some() && (d.instant(tz) - o.now).num_minutes().abs() < 15);
+    let now = !item.f.done
+        && due.is_some_and(|d| {
+            d.time(tz).is_some() && (d.instant(tz) - o.now).num_minutes().abs() < 15
+        });
     Entry {
         uid: item.uid.clone(),
         rid: None,
@@ -135,7 +144,11 @@ pub fn day(store: &Store, d: NaiveDate, o: &Opts) -> Vec<Entry> {
                         list: item.list.clone(),
                         day: d,
                         start: if s_day == d { occ.start.time(tz) } else { None },
-                        end: if ends_today && !all_day { end_local.map(|e| e.time()) } else { None },
+                        end: if ends_today && !all_day {
+                            end_local.map(|e| e.time())
+                        } else {
+                            None
+                        },
                         continued: s_day < d,
                         all_day: all_day || (s_day < d && !ends_today),
                         done: false,
@@ -155,7 +168,8 @@ pub fn day(store: &Store, d: NaiveDate, o: &Opts) -> Vec<Entry> {
                 let due_day = item.f.due.map(|m| m.date(tz));
                 let done_day = item.f.completed.map(|c| c.with_timezone(&tz).date_naive());
                 let show = if item.f.done {
-                    o.done_visible(item) && (done_day == Some(d) || (done_day.is_none() && due_day == Some(d)))
+                    o.done_visible(item)
+                        && (done_day == Some(d) || (done_day.is_none() && due_day == Some(d)))
                 } else {
                     due_day == Some(d)
                 };
@@ -189,7 +203,14 @@ fn sort_day(v: &mut [Entry]) {
 
 /// Overdue tasks, then each of the next `days` days that has anything.
 /// `overdue_collapse` limits the overdue section (0 = no limit).
-pub fn agenda(store: &Store, from: NaiveDate, days: u32, o: &Opts, overdue_collapse: usize, show_all_overdue: bool) -> Vec<Section> {
+pub fn agenda(
+    store: &Store,
+    from: NaiveDate,
+    days: u32,
+    o: &Opts,
+    overdue_collapse: usize,
+    show_all_overdue: bool,
+) -> Vec<Section> {
     let today = o.today();
     let mut sections = Vec::new();
     if from <= today {
@@ -207,7 +228,12 @@ pub fn agenda(store: &Store, from: NaiveDate, days: u32, o: &Opts, overdue_colla
             overdue.truncate(overdue_collapse);
         }
         if !overdue.is_empty() {
-            sections.push(Section { title: "Overdue".into(), day: None, entries: overdue, hidden });
+            sections.push(Section {
+                title: "Overdue".into(),
+                day: None,
+                entries: overdue,
+                hidden,
+            });
         }
     }
     for k in 0..days.max(1) {
@@ -216,7 +242,12 @@ pub fn agenda(store: &Store, from: NaiveDate, days: u32, o: &Opts, overdue_colla
         if entries.is_empty() && d != today {
             continue;
         }
-        sections.push(Section { title: day_title(d, today), day: Some(d), entries, hidden: 0 });
+        sections.push(Section {
+            title: day_title(d, today),
+            day: Some(d),
+            entries,
+            hidden: 0,
+        });
     }
     sections
 }
@@ -242,10 +273,17 @@ pub fn undated(store: &Store, o: &Opts) -> Vec<Entry> {
     let mut v: Vec<Entry> = store
         .items
         .iter()
-        .filter(|i| i.kind == Kind::Task && i.f.parent.is_none() && i.f.due.is_none() && o.done_visible(i))
+        .filter(|i| {
+            i.kind == Kind::Task && i.f.parent.is_none() && i.f.due.is_none() && o.done_visible(i)
+        })
         .map(|i| task_entry(store, i, o.today(), o))
         .collect();
-    v.sort_by(|a, b| a.done.cmp(&b.done).then(b.priority.cmp(&a.priority)).then(a.title.cmp(&b.title)));
+    v.sort_by(|a, b| {
+        a.done
+            .cmp(&b.done)
+            .then(b.priority.cmp(&a.priority))
+            .then(a.title.cmp(&b.title))
+    });
     v
 }
 
@@ -284,11 +322,22 @@ pub struct TaskRow {
 }
 
 fn created(i: &Item) -> String {
-    i.master().get("CREATED").map(|p| p.value.clone()).unwrap_or_else(|| i.file.clone())
+    i.master()
+        .get("CREATED")
+        .map(|p| p.value.clone())
+        .unwrap_or_else(|| i.file.clone())
 }
 
 fn task_order(a: &Item, b: &Item, sort: Sort, tz: Tz) -> std::cmp::Ordering {
-    let due = |i: &Item| i.f.due.map(|d| (d.date(tz), d.time(tz).unwrap_or(NaiveTime::from_hms_opt(23, 59, 59).expect("valid"))));
+    let due = |i: &Item| {
+        i.f.due.map(|d| {
+            (
+                d.date(tz),
+                d.time(tz)
+                    .unwrap_or(NaiveTime::from_hms_opt(23, 59, 59).expect("valid")),
+            )
+        })
+    };
     let by_due = |a: &Item, b: &Item| match (due(a), due(b)) {
         (Some(x), Some(y)) => x.cmp(&y),
         (Some(_), None) => std::cmp::Ordering::Less,
@@ -299,7 +348,11 @@ fn task_order(a: &Item, b: &Item, sort: Sort, tz: Tz) -> std::cmp::Ordering {
     let rest = match sort {
         Sort::Due => by_due(a, b).then(b.f.priority.cmp(&a.f.priority)),
         Sort::Priority => b.f.priority.cmp(&a.f.priority).then(by_due(a, b)),
-        Sort::Manual => a.f.sort.unwrap_or(i64::MAX).cmp(&b.f.sort.unwrap_or(i64::MAX)),
+        Sort::Manual => {
+            a.f.sort
+                .unwrap_or(i64::MAX)
+                .cmp(&b.f.sort.unwrap_or(i64::MAX))
+        }
     };
     done.then(rest).then(created(a).cmp(&created(b)))
 }
@@ -317,20 +370,37 @@ pub fn tasks(store: &Store, list: Option<&str>, sort: Sort, o: &Opts) -> Vec<Tas
     top.sort_by(|a, b| task_order(a, b, sort, tz));
     let mut out = Vec::new();
     for t in top {
-        let mut kids: Vec<&Item> = store.items.iter().filter(|c| c.f.parent.as_deref() == Some(&t.uid)).collect();
+        let mut kids: Vec<&Item> = store
+            .items
+            .iter()
+            .filter(|c| c.f.parent.as_deref() == Some(&t.uid))
+            .collect();
         kids.sort_by(|a, b| task_order(a, b, Sort::Manual, tz));
         let day = t.f.due.map(|d| d.date(tz)).unwrap_or(o.today());
-        out.push(TaskRow { entry: task_entry(store, t, day, o), depth: 0, has_children: !kids.is_empty() });
+        out.push(TaskRow {
+            entry: task_entry(store, t, day, o),
+            depth: 0,
+            has_children: !kids.is_empty(),
+        });
         for k in kids {
             let kd = k.f.due.map(|d| d.date(tz)).unwrap_or(day);
-            out.push(TaskRow { entry: task_entry(store, k, kd, o), depth: 1, has_children: false });
+            out.push(TaskRow {
+                entry: task_entry(store, k, kd, o),
+                depth: 1,
+                has_children: false,
+            });
         }
     }
     out
 }
 
 /// Lists that have something on each day of `[from, to)`, for month dots.
-pub fn busy_days(store: &Store, from: NaiveDate, to: NaiveDate, o: &Opts) -> HashMap<NaiveDate, Vec<String>> {
+pub fn busy_days(
+    store: &Store,
+    from: NaiveDate,
+    to: NaiveDate,
+    o: &Opts,
+) -> HashMap<NaiveDate, Vec<String>> {
     let tz = o.tz;
     let mut out: HashMap<NaiveDate, Vec<String>> = HashMap::new();
     for item in &store.items {
@@ -340,7 +410,13 @@ pub fn busy_days(store: &Store, from: NaiveDate, to: NaiveDate, o: &Opts) -> Has
                     let first = occ.start.date(tz).max(from);
                     let last = occ
                         .end
-                        .map(|e| if e.is_date() { e.date(tz) - Duration::days(1) } else { e.local(tz).date() })
+                        .map(|e| {
+                            if e.is_date() {
+                                e.date(tz) - Duration::days(1)
+                            } else {
+                                e.local(tz).date()
+                            }
+                        })
                         .unwrap_or(first)
                         .min(to - Duration::days(1));
                     let mut d = first;
@@ -354,7 +430,12 @@ pub fn busy_days(store: &Store, from: NaiveDate, to: NaiveDate, o: &Opts) -> Has
                 if item.f.done || item.f.parent.is_some() {
                     continue;
                 }
-                if let Some(d) = item.f.due.map(|m| m.date(tz)).filter(|d| *d >= from && *d < to) {
+                if let Some(d) = item
+                    .f
+                    .due
+                    .map(|m| m.date(tz))
+                    .filter(|d| *d >= from && *d < to)
+                {
                     out.entry(d).or_default().push(item.list.clone());
                 }
             }
@@ -363,14 +444,13 @@ pub fn busy_days(store: &Store, from: NaiveDate, to: NaiveDate, o: &Opts) -> Has
     out
 }
 
-/// Case-insensitive fuzzy match: every query word is a subsequence of the
-/// title or the list name.
+/// Case-insensitive match: every query word appears in the title or `#list`.
 pub fn matches(query: &str, title: &str, list: &str) -> bool {
     let hay = format!("{} #{}", title.to_lowercase(), list.to_lowercase());
     query
         .to_lowercase()
         .split_whitespace()
-        .all(|w| hay.contains(w) || super::parse::subsequence(w, &hay))
+        .all(|w| hay.contains(w))
 }
 
 /// How well `query` matches: contiguous beats scattered, earlier beats later.
@@ -421,16 +501,31 @@ mod tests {
         ] {
             ops::add(&mut store, &mut j, &env, t, None, &d).unwrap();
         }
-        let o = Opts { now, tz, hide_done_after: Some(Duration::days(1)) };
+        let o = Opts {
+            now,
+            tz,
+            hide_done_after: Some(Duration::days(1)),
+        };
         let secs = agenda(&store, o.today(), 7, &o, 5, false);
         let titles: Vec<&str> = secs.iter().map(|s| s.title.as_str()).collect();
-        assert_eq!(titles, vec!["Overdue", "Today · Thu 15", "Tomorrow · Fri 16", "Sat 17"]);
+        assert_eq!(
+            titles,
+            vec!["Overdue", "Today · Thu 15", "Tomorrow · Fri 16", "Sat 17"]
+        );
         let today: Vec<&str> = secs[1].entries.iter().map(|e| e.title.as_str()).collect();
         assert_eq!(today, vec!["standup", "lunch", "dentist", "pay rent"]);
         assert!(secs[1].entries[1].now, "lunch is happening now");
         assert_eq!(undated(&store, &o).len(), 1);
-        let busy = busy_days(&store, NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(), NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(), &o);
-        assert_eq!(busy[&NaiveDate::from_ymd_opt(2026, 10, 15).unwrap()].len(), 4);
+        let busy = busy_days(
+            &store,
+            NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 11, 1).unwrap(),
+            &o,
+        );
+        assert_eq!(
+            busy[&NaiveDate::from_ymd_opt(2026, 10, 15).unwrap()].len(),
+            4
+        );
         let rows = tasks(&store, None, Sort::Due, &o);
         assert_eq!(rows.first().unwrap().entry.title, "renew passport");
         assert_eq!(rows.last().unwrap().entry.title, "someday thing");
@@ -439,7 +534,8 @@ mod tests {
 
     #[test]
     fn fuzzy() {
-        assert!(matches("mlk", "buy milk", "home"));
+        assert!(matches("mil", "buy milk", "home"));
+        assert!(!matches("rent", "renew passport", "home"));
         assert!(matches("milk #home", "buy milk", "home"));
         assert!(!matches("bread", "buy milk", "home"));
         assert!(score("milk", "buy milk") > score("mk", "buy milk"));

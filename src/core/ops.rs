@@ -24,7 +24,12 @@ pub struct Env<'a> {
 
 impl<'a> Env<'a> {
     pub fn ctx(&self, lists: &'a [List]) -> Ctx<'a> {
-        Ctx { now: self.now, date_order: self.cfg.date_order, week_start: self.cfg.week_start, lists }
+        Ctx {
+            now: self.now,
+            date_order: self.cfg.date_order,
+            week_start: self.cfg.week_start,
+            lists,
+        }
     }
 
     pub fn today(&self) -> NaiveDate {
@@ -49,14 +54,28 @@ pub struct Done {
 }
 
 fn done(message: impl Into<String>, uid: Option<String>) -> Result<Done> {
-    Ok(Done { message: message.into(), uid })
+    Ok(Done {
+        message: message.into(),
+        uid,
+    })
 }
 
 /// Which list a draft names, plus a change to create it if needed.
-fn resolve_list(store: &Store, draft: &Draft, fallback: &str, default_list: &str) -> Result<(String, Option<Change>)> {
+fn resolve_list(
+    store: &Store,
+    draft: &Draft,
+    fallback: &str,
+    default_list: &str,
+) -> Result<(String, Option<Change>)> {
     let create = |id: &str| -> Result<(String, Option<Change>)> {
         validate_list_id(id)?;
-        Ok((id.to_string(), Some(Change::CreateList { id: id.to_string(), name: None })))
+        Ok((
+            id.to_string(),
+            Some(Change::CreateList {
+                id: id.to_string(),
+                name: None,
+            }),
+        ))
     };
     match &draft.list {
         Some(ListPick::Existing(id)) => Ok((id.clone(), None)),
@@ -83,7 +102,13 @@ pub fn kind_for(draft: &Draft, force: Option<Kind>, existing: Option<Kind>) -> K
 }
 
 /// Fields for `kind` from a draft. `base` is the item being edited, if any.
-fn fields_from(draft: &Draft, kind: Kind, base: Option<&Fields>, defaults: &Defaults, env: &Env) -> Fields {
+fn fields_from(
+    draft: &Draft,
+    kind: Kind,
+    base: Option<&Fields>,
+    defaults: &Defaults,
+    env: &Env,
+) -> Fields {
     let tz = env.tz;
     let mut f = base.cloned().unwrap_or_default();
     f.title = draft.title.trim().to_string();
@@ -122,7 +147,9 @@ fn fields_from(draft: &Draft, kind: Kind, base: Option<&Fields>, defaults: &Defa
                     Some(s) if !s.is_date() => s.with_local(date, Some(t), tz),
                     _ => Moment::at(tz, date, Some(t)),
                 };
-                let old_len = base.and_then(|b| Some(b.end?.instant(tz) - b.start?.instant(tz))).filter(|l| *l > Duration::zero());
+                let old_len = base
+                    .and_then(|b| Some(b.end?.instant(tz) - b.start?.instant(tz)))
+                    .filter(|l| *l > Duration::zero());
                 let end_at = match (draft.end_time, draft.length) {
                     (Some(e), _) => {
                         let mut end_date = date;
@@ -152,17 +179,30 @@ fn shift(m: Moment, d: Duration) -> Moment {
 
 /// The default reminder for a list, if the config sets one.
 fn default_alarm(env: &Env, list: &str) -> Option<Duration> {
-    env.cfg.default_reminder.get(list).and_then(|s| parse::parse_length(s))
+    env.cfg
+        .default_reminder
+        .get(list)
+        .and_then(|s| parse::parse_length(s))
 }
 
 /// Adds an item from quick-add text.
-pub fn add(store: &mut Store, journal: &mut Journal, env: &Env, text: &str, force: Option<Kind>, defaults: &Defaults) -> Result<Done> {
+pub fn add(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    text: &str,
+    force: Option<Kind>,
+    defaults: &Defaults,
+) -> Result<Done> {
     let lists = store.lists.clone();
     let draft = parse::parse(text, &env.ctx(&lists));
     if draft.title.trim().is_empty() {
         bail!("nothing to add: give it a title");
     }
-    let fallback = defaults.list.clone().unwrap_or_else(|| env.cfg.default_list.clone());
+    let fallback = defaults
+        .list
+        .clone()
+        .unwrap_or_else(|| env.cfg.default_list.clone());
     let (list, create) = resolve_list(store, &draft, &fallback, &env.cfg.default_list)?;
     let kind = kind_for(&draft, force, None);
     let mut f = fields_from(&draft, kind, None, defaults, env);
@@ -201,7 +241,11 @@ pub fn draft_summary(item: &Item, env: &Env) -> String {
             if let Some(s) = item.f.start {
                 let day = s.date(tz).format("%a %-d %b").to_string();
                 match (s.time(tz), item.f.end.and_then(|e| e.time(tz))) {
-                    (Some(a), Some(b)) => parts.push(format!("{day} {}–{}", parse::fmt_time(a, fmt), parse::fmt_time(b, fmt))),
+                    (Some(a), Some(b)) => parts.push(format!(
+                        "{day} {}–{}",
+                        parse::fmt_time(a, fmt),
+                        parse::fmt_time(b, fmt)
+                    )),
                     (Some(a), None) => parts.push(format!("{day} {}", parse::fmt_time(a, fmt))),
                     _ => parts.push(format!("{day} all day")),
                 }
@@ -216,7 +260,10 @@ pub fn draft_summary(item: &Item, env: &Env) -> String {
 }
 
 fn get(store: &Store, uid: &str) -> Result<Item> {
-    store.get(uid).cloned().with_context(|| format!("no item {uid}"))
+    store
+        .get(uid)
+        .cloned()
+        .with_context(|| format!("no item {uid}"))
 }
 
 /// The grammar text that recreates an item, for the edit bar.
@@ -226,9 +273,14 @@ pub fn to_grammar(item: &Item, rid: Rid, env: &Env) -> String {
     let fmt = env.cfg.time_format;
     let (f, start, end) = match (rid, item.kind) {
         (Some(r), Kind::Event) => {
-            let occ = recur::occurrences(item, r.date(tz) - Duration::days(1), r.date(tz) + Duration::days(2), tz)
-                .into_iter()
-                .find(|o| o.rid == Some(r));
+            let occ = recur::occurrences(
+                item,
+                r.date(tz) - Duration::days(1),
+                r.date(tz) + Duration::days(2),
+                tz,
+            )
+            .into_iter()
+            .find(|o| o.rid == Some(r));
             match occ {
                 Some(o) => (o.f.clone(), Some(o.start), o.end),
                 None => (item.f.clone(), item.f.start, item.f.end),
@@ -250,9 +302,15 @@ pub fn to_grammar(item: &Item, rid: Rid, env: &Env) -> String {
             if let Some(s) = start {
                 let day = s.date(tz);
                 if s.is_date() {
-                    let last = end.map(|e| e.date(tz) - Duration::days(1)).filter(|l| *l > day);
+                    let last = end
+                        .map(|e| e.date(tz) - Duration::days(1))
+                        .filter(|l| *l > day);
                     match last {
-                        Some(l) => out.push(format!("{} to {}", parse::grammar_date(day, today), parse::grammar_date(l, today))),
+                        Some(l) => out.push(format!(
+                            "{} to {}",
+                            parse::grammar_date(day, today),
+                            parse::grammar_date(l, today)
+                        )),
                         None => {
                             out.push("allday".into());
                             out.push(parse::grammar_date(day, today));
@@ -263,7 +321,11 @@ pub fn to_grammar(item: &Item, rid: Rid, env: &Env) -> String {
                     let st = s.time(tz).expect("timed");
                     match end {
                         Some(e) if e.date(tz) == day && e.time(tz).is_some_and(|et| et > st) => {
-                            out.push(format!("{}-{}", parse::grammar_time(st, fmt), parse::grammar_time(e.time(tz).expect("timed"), fmt)));
+                            out.push(format!(
+                                "{}-{}",
+                                parse::grammar_time(st, fmt),
+                                parse::grammar_time(e.time(tz).expect("timed"), fmt)
+                            ));
                         }
                         Some(e) => {
                             out.push(parse::grammar_time(st, fmt));
@@ -282,10 +344,10 @@ pub fn to_grammar(item: &Item, rid: Rid, env: &Env) -> String {
     if f.priority > 0 {
         out.push("!".repeat(f.priority as usize));
     }
-    if rid.is_none() {
-        if let Some(r) = &item.f.rrule {
-            out.push(recur::describe(r).unwrap_or_else(|| "every custom".into()));
-        }
+    if rid.is_none()
+        && let Some(r) = &item.f.rrule
+    {
+        out.push(recur::describe(r).unwrap_or_else(|| "every custom".into()));
     }
     if let Some(a) = f.alarms.first() {
         out.push(format!("remind {}", parse::fmt_length(*a)));
@@ -303,11 +365,22 @@ fn quote_title(title: &str) -> String {
         lists: &probe_lists,
     };
     let parsed = parse::parse(title, &ctx);
-    if parsed.title == title && parsed.spans.is_empty() { title.to_string() } else { format!("\"{}\"", title.replace('"', "'")) }
+    if parsed.title == title && parsed.spans.is_empty() {
+        title.to_string()
+    } else {
+        format!("\"{}\"", title.replace('"', "'"))
+    }
 }
 
 /// Re-parses text onto an item (all of it, or one occurrence with `rid`).
-pub fn edit(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, rid: Rid, text: &str) -> Result<Done> {
+pub fn edit(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    uid: &str,
+    rid: Rid,
+    text: &str,
+) -> Result<Done> {
     let lists = store.lists.clone();
     let draft = parse::parse(text, &env.ctx(&lists));
     if draft.title.trim().is_empty() {
@@ -326,7 +399,11 @@ pub fn edit(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, rid:
             .map(|(_, f)| f.clone())
             .unwrap_or_else(|| item.f.clone());
         if base.start.is_none() || item.overrides.iter().all(|(x, _)| *x != r) {
-            let len = item.f.end.zip(item.f.start).map(|(e, s)| e.instant(env.tz) - s.instant(env.tz));
+            let len = item
+                .f
+                .end
+                .zip(item.f.start)
+                .map(|(e, s)| e.instant(env.tz) - s.instant(env.tz));
             base.start = Some(r);
             base.end = len.map(|l| shift(r, l));
         }
@@ -373,7 +450,15 @@ fn convert(mut item: Item, kind: Kind) -> Item {
     let old = item.kind.component();
     for c in item.cal.children.iter_mut().filter(|c| c.name == old) {
         c.name = comp.to_string();
-        for p in ["DUE", "DTSTART", "DTEND", "DURATION", "STATUS", "COMPLETED", "PERCENT-COMPLETE"] {
+        for p in [
+            "DUE",
+            "DTSTART",
+            "DTEND",
+            "DURATION",
+            "STATUS",
+            "COMPLETED",
+            "PERCENT-COMPLETE",
+        ] {
             c.remove(p);
         }
     }
@@ -389,58 +474,91 @@ fn convert(mut item: Item, kind: Kind) -> Item {
 }
 
 /// Ticks a task off (or back on). A repeating task moves to its next due.
-pub fn set_done(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, on: bool) -> Result<Done> {
+pub fn set_done(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    uid: &str,
+    on: bool,
+) -> Result<Done> {
     let mut item = get(store, uid)?;
     if item.kind != Kind::Task {
         bail!("{} is an event; only tasks can be ticked off", item.f.title);
     }
     let title = item.f.title.clone();
-    if on {
-        if let (Some(rule), Some(due)) = (item.f.rrule.clone(), item.f.due) {
-            let next = recur::next_due(&rule, &due, env.now, env.tz).context("the repeat has no next date")?;
-            item.f.due = Some(next);
-            item.sync(env.now);
-            // Subtasks start over each time.
-            let mut changes: Vec<Change> = store
-                .items
-                .iter()
-                .filter(|c| c.f.parent.as_deref() == Some(uid) && c.f.done)
-                .map(|c| {
-                    let mut c = c.clone();
-                    c.f.done = false;
-                    c.f.completed = None;
-                    c.sync(env.now);
-                    Change::Put(c)
-                })
-                .collect();
-            changes.push(Change::Put(item));
-            store.commit(journal, &format!("done {title}"), changes)?;
-            let day = next.date(env.tz).format("%a %-d %b");
-            return done(format!("done · {title} (next: {day})"), Some(uid.to_string()));
-        }
+    if on && let (Some(rule), Some(due)) = (item.f.rrule.clone(), item.f.due) {
+        let next =
+            recur::next_due(&rule, &due, env.now, env.tz).context("the repeat has no next date")?;
+        item.f.due = Some(next);
+        item.sync(env.now);
+        // Subtasks start over each time.
+        let mut changes: Vec<Change> = store
+            .items
+            .iter()
+            .filter(|c| c.f.parent.as_deref() == Some(uid) && c.f.done)
+            .map(|c| {
+                let mut c = c.clone();
+                c.f.done = false;
+                c.f.completed = None;
+                c.sync(env.now);
+                Change::Put(c)
+            })
+            .collect();
+        changes.push(Change::Put(item));
+        store.commit(journal, &format!("done {title}"), changes)?;
+        let day = next.date(env.tz).format("%a %-d %b");
+        return done(
+            format!("done · {title} (next: {day})"),
+            Some(uid.to_string()),
+        );
     }
     if item.f.done == on {
-        return done(format!("{} · {title} already", if on { "done" } else { "not done" }), Some(uid.to_string()));
+        return done(
+            format!("{} · {title} already", if on { "done" } else { "not done" }),
+            Some(uid.to_string()),
+        );
     }
     item.f.done = on;
     item.f.completed = None;
     item.sync(env.now);
-    store.commit(journal, &format!("{} {title}", if on { "done" } else { "undone" }), vec![Change::Put(item)])?;
-    done(format!("{} · {title}", if on { "done" } else { "not done" }), Some(uid.to_string()))
+    store.commit(
+        journal,
+        &format!("{} {title}", if on { "done" } else { "undone" }),
+        vec![Change::Put(item)],
+    )?;
+    done(
+        format!("{} · {title}", if on { "done" } else { "not done" }),
+        Some(uid.to_string()),
+    )
 }
 
 /// Deletes an item (and its subtasks), or one occurrence of a recurring event.
-pub fn remove(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, rid: Rid) -> Result<Done> {
+pub fn remove(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    uid: &str,
+    rid: Rid,
+) -> Result<Done> {
     let mut item = get(store, uid)?;
     let title = item.f.title.clone();
     if let (Some(r), true) = (rid, item.is_recurring()) {
         item.overrides.retain(|(x, _)| *x != r);
         item.exdates.push(r);
         item.sync(env.now);
-        store.commit(journal, &format!("delete one {title}"), vec![Change::Put(item)])?;
+        store.commit(
+            journal,
+            &format!("delete one {title}"),
+            vec![Change::Put(item)],
+        )?;
         return done(format!("deleted this {title} only"), None);
     }
-    let kids: Vec<String> = store.items.iter().filter(|c| c.f.parent.as_deref() == Some(uid)).map(|c| c.uid.clone()).collect();
+    let kids: Vec<String> = store
+        .items
+        .iter()
+        .filter(|c| c.f.parent.as_deref() == Some(uid))
+        .map(|c| c.uid.clone())
+        .collect();
     let mut changes = vec![Change::Remove(uid.to_string())];
     changes.extend(kids.iter().cloned().map(Change::Remove));
     store.commit(journal, &format!("delete {title}"), changes)?;
@@ -453,18 +571,34 @@ pub fn remove(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, ri
 }
 
 /// Moves by days (the `+`/`-` keys). Undated tasks start from today.
-pub fn shift_days(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, rid: Rid, days: i64) -> Result<Done> {
+pub fn shift_days(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    uid: &str,
+    rid: Rid,
+    days: i64,
+) -> Result<Done> {
     let mut item = get(store, uid)?;
     let tz = env.tz;
     let title = item.f.title.clone();
     if let (Some(r), true) = (rid, item.is_recurring() && item.kind == Kind::Event) {
-        let len = item.f.end.zip(item.f.start).map(|(e, s)| e.instant(tz) - s.instant(tz));
-        let mut f = item.overrides.iter().find(|(x, _)| *x == r).map(|(_, f)| f.clone()).unwrap_or_else(|| {
-            let mut f = item.f.clone();
-            f.start = Some(r);
-            f.end = len.map(|l| shift(r, l));
-            f
-        });
+        let len = item
+            .f
+            .end
+            .zip(item.f.start)
+            .map(|(e, s)| e.instant(tz) - s.instant(tz));
+        let mut f = item
+            .overrides
+            .iter()
+            .find(|(x, _)| *x == r)
+            .map(|(_, f)| f.clone())
+            .unwrap_or_else(|| {
+                let mut f = item.f.clone();
+                f.start = Some(r);
+                f.end = len.map(|l| shift(r, l));
+                f
+            });
         f.rrule = None;
         f.start = f.start.map(|s| s.shift_days(days));
         f.end = f.end.map(|e| e.shift_days(days));
@@ -472,8 +606,14 @@ pub fn shift_days(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str
         item.overrides.push((r, f.clone()));
         item.sync(env.now);
         store.commit(journal, &format!("move {title}"), vec![Change::Put(item)])?;
-        let day = f.start.map(|s| s.date(tz).format("%a %-d %b").to_string()).unwrap_or_default();
-        return done(format!("moved this {title} to {day}"), Some(uid.to_string()));
+        let day = f
+            .start
+            .map(|s| s.date(tz).format("%a %-d %b").to_string())
+            .unwrap_or_default();
+        return done(
+            format!("moved this {title} to {day}"),
+            Some(uid.to_string()),
+        );
     }
     match item.kind {
         Kind::Task => {
@@ -488,17 +628,30 @@ pub fn shift_days(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str
         }
     }
     item.sync(env.now);
-    let day = item.date(tz).map(|d| d.format("%a %-d %b").to_string()).unwrap_or_default();
+    let day = item
+        .date(tz)
+        .map(|d| d.format("%a %-d %b").to_string())
+        .unwrap_or_default();
     store.commit(journal, &format!("move {title}"), vec![Change::Put(item)])?;
     done(format!("moved {title} to {day}"), Some(uid.to_string()))
 }
 
 /// Moves to a date, a time, a list — whatever the text names (`fri`, `3pm`, `#work`).
-pub fn move_to(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, rid: Rid, text: &str) -> Result<Done> {
+pub fn move_to(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    uid: &str,
+    rid: Rid,
+    text: &str,
+) -> Result<Done> {
     let lists = store.lists.clone();
     let draft = parse::parse(text, &env.ctx(&lists));
     if !draft.title.trim().is_empty() {
-        bail!("move takes a date, a time or a #list, not {:?}", draft.title);
+        bail!(
+            "move takes a date, a time or a #list, not {:?}",
+            draft.title
+        );
     }
     let item = get(store, uid)?;
     let tz = env.tz;
@@ -507,15 +660,26 @@ pub fn move_to(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, r
         if draft.list.is_some() {
             bail!("a single occurrence can't change list; move the whole series");
         }
-        let target = draft.date.filter(|_| explicit_date).unwrap_or_else(|| r.date(tz));
+        let target = draft
+            .date
+            .filter(|_| explicit_date)
+            .unwrap_or_else(|| r.date(tz));
         let delta = (target - r.date(tz)).num_days();
         let res = shift_days(store, journal, env, uid, Some(r), delta)?;
         if let Some(t) = draft.time {
             let item = get(store, uid)?;
-            let (_, f) = item.overrides.iter().find(|(x, _)| *x == r).cloned().context("override")?;
+            let (_, f) = item
+                .overrides
+                .iter()
+                .find(|(x, _)| *x == r)
+                .cloned()
+                .context("override")?;
             let mut item = item;
             let mut f = f;
-            let len = f.end.zip(f.start).map(|(e, s)| e.instant(tz) - s.instant(tz));
+            let len = f
+                .end
+                .zip(f.start)
+                .map(|(e, s)| e.instant(tz) - s.instant(tz));
             let s = f.start.expect("start").with_local(target, Some(t), tz);
             f.start = Some(s);
             f.end = len.map(|l| shift(s, l));
@@ -535,7 +699,11 @@ pub fn move_to(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, r
     match item.kind {
         Kind::Task => {
             if draft.date.is_some() || draft.time.is_some() {
-                let date = if explicit_date { draft.date } else { item.f.due.map(|d| d.date(tz)).or(draft.date) };
+                let date = if explicit_date {
+                    draft.date
+                } else {
+                    item.f.due.map(|d| d.date(tz)).or(draft.date)
+                };
                 let time = draft.time.or_else(|| item.f.due.and_then(|d| d.time(tz)));
                 item.f.due = date.map(|d| Moment::at(tz, d, time));
             }
@@ -543,7 +711,11 @@ pub fn move_to(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, r
         Kind::Event => {
             if let (Some(s), true) = (item.f.start, draft.date.is_some() || draft.time.is_some()) {
                 let len = item.f.end.map(|e| e.instant(tz) - s.instant(tz));
-                let date = if explicit_date { draft.date.expect("date") } else { s.date(tz) };
+                let date = if explicit_date {
+                    draft.date.expect("date")
+                } else {
+                    s.date(tz)
+                };
                 let new_start = match (draft.time, s.is_date()) {
                     (Some(t), _) => s.with_local(date, Some(t), tz),
                     (None, true) => Moment::Date(date),
@@ -570,7 +742,13 @@ pub fn move_to(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, r
 }
 
 /// Makes `uid` a subtask of `parent` (or a top-level task with `None`).
-pub fn set_parent(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str, parent: Option<&str>) -> Result<Done> {
+pub fn set_parent(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    uid: &str,
+    parent: Option<&str>,
+) -> Result<Done> {
     let mut item = get(store, uid)?;
     if item.kind != Kind::Task {
         bail!("only tasks can be subtasks");
@@ -581,26 +759,46 @@ pub fn set_parent(store: &mut Store, journal: &mut Journal, env: &Env, uid: &str
         if pi.kind != Kind::Task || pi.f.parent.is_some() || p == uid {
             bail!("subtasks go one level deep, under a task");
         }
-        if store.items.iter().any(|c| c.f.parent.as_deref() == Some(uid)) {
+        if store
+            .items
+            .iter()
+            .any(|c| c.f.parent.as_deref() == Some(uid))
+        {
             bail!("{title} has its own subtasks, so it can't be one");
         }
         item.f.parent = Some(p.to_string());
         item.list = pi.list.clone();
         item.sync(env.now);
         store.commit(journal, &format!("indent {title}"), vec![Change::Put(item)])?;
-        return done(format!("{title} is now under {}", pi.f.title), Some(uid.to_string()));
+        return done(
+            format!("{title} is now under {}", pi.f.title),
+            Some(uid.to_string()),
+        );
     }
     if item.f.parent.is_none() {
-        return done(format!("{title} is already top-level"), Some(uid.to_string()));
+        return done(
+            format!("{title} is already top-level"),
+            Some(uid.to_string()),
+        );
     }
     item.f.parent = None;
     item.sync(env.now);
-    store.commit(journal, &format!("outdent {title}"), vec![Change::Put(item)])?;
+    store.commit(
+        journal,
+        &format!("outdent {title}"),
+        vec![Change::Put(item)],
+    )?;
     done(format!("{title} is top-level again"), Some(uid.to_string()))
 }
 
 /// Writes manual sort positions for `order` (uids in their new order).
-pub fn reorder(store: &mut Store, journal: &mut Journal, env: &Env, order: &[String], moved: &str) -> Result<Done> {
+pub fn reorder(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    order: &[String],
+    moved: &str,
+) -> Result<Done> {
     let mut changes = Vec::new();
     for (i, uid) in order.iter().enumerate() {
         let mut it = get(store, uid)?;
@@ -611,17 +809,32 @@ pub fn reorder(store: &mut Store, journal: &mut Journal, env: &Env, order: &[Str
             changes.push(Change::Put(it));
         }
     }
-    let title = store.get(moved).map(|i| i.f.title.clone()).unwrap_or_default();
+    let title = store
+        .get(moved)
+        .map(|i| i.f.title.clone())
+        .unwrap_or_default();
     store.commit(journal, &format!("reorder {title}"), changes)?;
     done(format!("moved {title}"), Some(moved.to_string()))
 }
 
-pub fn create_list(store: &mut Store, journal: &mut Journal, id: &str, name: Option<&str>) -> Result<Done> {
+pub fn create_list(
+    store: &mut Store,
+    journal: &mut Journal,
+    id: &str,
+    name: Option<&str>,
+) -> Result<Done> {
     validate_list_id(id)?;
     if store.list(id).is_some() {
         bail!("#{id} already exists");
     }
-    store.commit(journal, &format!("new list {id}"), vec![Change::CreateList { id: id.into(), name: name.map(str::to_string) }])?;
+    store.commit(
+        journal,
+        &format!("new list {id}"),
+        vec![Change::CreateList {
+            id: id.into(),
+            name: name.map(str::to_string),
+        }],
+    )?;
     done(format!("new list #{id}"), None)
 }
 
@@ -629,11 +842,23 @@ pub fn rename_list(store: &mut Store, journal: &mut Journal, id: &str, name: &st
     if store.list(id).is_none() {
         bail!("no list #{id}");
     }
-    store.commit(journal, &format!("rename {id}"), vec![Change::SetListName { id: id.into(), name: Some(name.into()) }])?;
+    store.commit(
+        journal,
+        &format!("rename {id}"),
+        vec![Change::SetListName {
+            id: id.into(),
+            name: Some(name.into()),
+        }],
+    )?;
     done(format!("#{id} is shown as {name}"), None)
 }
 
-pub fn set_list_color(store: &mut Store, journal: &mut Journal, id: &str, color: Option<String>) -> Result<Done> {
+pub fn set_list_color(
+    store: &mut Store,
+    journal: &mut Journal,
+    id: &str,
+    color: Option<String>,
+) -> Result<Done> {
     if store.list(id).is_none() {
         bail!("no list #{id}");
     }
@@ -641,7 +866,14 @@ pub fn set_list_color(store: &mut Store, journal: &mut Journal, id: &str, color:
         Some(c) => format!("#{id} is {c}"),
         None => format!("#{id} uses the theme's colour"),
     };
-    store.commit(journal, &format!("colour {id}"), vec![Change::SetListColor { id: id.into(), color }])?;
+    store.commit(
+        journal,
+        &format!("colour {id}"),
+        vec![Change::SetListColor {
+            id: id.into(),
+            color,
+        }],
+    )?;
     done(msg, None)
 }
 
@@ -677,7 +909,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         let store = Store::open(&dir.join("data"), Some(&dir.join("state"))).unwrap();
         let journal = Journal::load(&dir.join("state"));
-        T { dir, store, journal, cfg: Config::default() }
+        T {
+            dir,
+            store,
+            journal,
+            cfg: Config::default(),
+        }
     }
 
     impl Drop for T {
@@ -688,7 +925,11 @@ mod tests {
 
     fn env(cfg: &Config) -> Env<'_> {
         let tz = Tz::Europe__London;
-        Env { now: tz.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap(), tz, cfg }
+        Env {
+            now: tz.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap(),
+            tz,
+            cfg,
+        }
     }
 
     #[test]
@@ -696,14 +937,57 @@ mod tests {
         let mut t = setup("add");
         let cfg = t.cfg.clone();
         let e = env(&cfg);
-        let r = add(&mut t.store, &mut t.journal, &e, "pay rent fri !", None, &Defaults::default()).unwrap();
-        assert_eq!(r.message, "added task pay rent · due Fri 16 Oct · #personal");
-        let r = add(&mut t.store, &mut t.journal, &e, "dentist sat 2-3pm #health!", None, &Defaults::default()).unwrap();
-        assert_eq!(r.message, "added event dentist · Sat 17 Oct 14:00–15:00 · #health");
+        let r = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "pay rent fri !",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            r.message,
+            "added task pay rent · due Fri 16 Oct · #personal"
+        );
+        let r = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "dentist sat 2-3pm #health!",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            r.message,
+            "added event dentist · Sat 17 Oct 14:00–15:00 · #health"
+        );
         assert_eq!(t.store.lists.len(), 2);
-        assert!(add(&mut t.store, &mut t.journal, &e, "x #nope", None, &Defaults::default()).is_err());
-        let r = add(&mut t.store, &mut t.journal, &e, "meeting 3pm", Some(Kind::Event), &Defaults::default()).unwrap();
-        assert_eq!(r.message, "added event meeting · Thu 15 Oct 15:00–16:00 · #personal");
+        assert!(
+            add(
+                &mut t.store,
+                &mut t.journal,
+                &e,
+                "x #nope",
+                None,
+                &Defaults::default()
+            )
+            .is_err()
+        );
+        let r = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "meeting 3pm",
+            Some(Kind::Event),
+            &Defaults::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            r.message,
+            "added event meeting · Thu 15 Oct 15:00–16:00 · #personal"
+        );
     }
 
     #[test]
@@ -718,7 +1002,15 @@ mod tests {
             "standup oct 20 09:30-10:00 #personal every weekday",
             "\"fri\" night oct 21 #personal",
         ] {
-            let r = add(&mut t.store, &mut t.journal, &e, text, None, &Defaults::default()).unwrap();
+            let r = add(
+                &mut t.store,
+                &mut t.journal,
+                &e,
+                text,
+                None,
+                &Defaults::default(),
+            )
+            .unwrap();
             let uid = r.uid.unwrap();
             let item = t.store.get(&uid).unwrap().clone();
             let g = to_grammar(&item, None, &e);
@@ -733,13 +1025,33 @@ mod tests {
         let mut t = setup("done");
         let cfg = t.cfg.clone();
         let e = env(&cfg);
-        let uid = add(&mut t.store, &mut t.journal, &e, "water plants every 3 days", None, &Defaults::default()).unwrap().uid.unwrap();
+        let uid = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "water plants every 3 days",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap()
+        .uid
+        .unwrap();
         // No date given: a plain repeat starts undated; give it one.
         move_to(&mut t.store, &mut t.journal, &e, &uid, None, "today").unwrap();
         let r = set_done(&mut t.store, &mut t.journal, &e, &uid, true).unwrap();
         assert_eq!(r.message, "done · water plants (next: Sun 18 Oct)");
         assert!(!t.store.get(&uid).unwrap().f.done);
-        let uid2 = add(&mut t.store, &mut t.journal, &e, "milk", None, &Defaults::default()).unwrap().uid.unwrap();
+        let uid2 = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "milk",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap()
+        .uid
+        .unwrap();
         set_done(&mut t.store, &mut t.journal, &e, &uid2, true).unwrap();
         assert!(t.store.get(&uid2).unwrap().f.done);
         undo(&mut t.store, &mut t.journal).unwrap();
@@ -751,14 +1063,28 @@ mod tests {
         let mut t = setup("move");
         let cfg = t.cfg.clone();
         let e = env(&cfg);
-        let uid = add(&mut t.store, &mut t.journal, &e, "call fri 3pm", None, &Defaults::default()).unwrap().uid.unwrap();
+        let uid = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "call fri 3pm",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap()
+        .uid
+        .unwrap();
         shift_days(&mut t.store, &mut t.journal, &e, &uid, None, 1).unwrap();
         let d = t.store.get(&uid).unwrap().f.due.unwrap();
         assert_eq!(d.date(e.tz).to_string(), "2026-10-17");
         assert_eq!(d.time(e.tz).unwrap().to_string(), "15:00:00");
         move_to(&mut t.store, &mut t.journal, &e, &uid, None, "9am").unwrap();
         let d = t.store.get(&uid).unwrap().f.due.unwrap();
-        assert_eq!(d.date(e.tz).to_string(), "2026-10-17", "a time alone keeps the date");
+        assert_eq!(
+            d.date(e.tz).to_string(),
+            "2026-10-17",
+            "a time alone keeps the date"
+        );
         assert_eq!(d.time(e.tz).unwrap().to_string(), "09:00:00");
         move_to(&mut t.store, &mut t.journal, &e, &uid, None, "#work!").unwrap();
         assert_eq!(t.store.get(&uid).unwrap().list, "work");
@@ -770,24 +1096,46 @@ mod tests {
         let mut t = setup("occ");
         let cfg = t.cfg.clone();
         let e = env(&cfg);
-        let uid = add(&mut t.store, &mut t.journal, &e, "standup oct 19 09:30-10:00 every weekday", None, &Defaults::default())
-            .unwrap()
-            .uid
-            .unwrap();
+        let uid = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "standup oct 19 09:30-10:00 every weekday",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap()
+        .uid
+        .unwrap();
         let item = t.store.get(&uid).unwrap().clone();
         let tz = e.tz;
-        let occ = recur::occurrences(&item, NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(), NaiveDate::from_ymd_opt(2026, 10, 21).unwrap(), tz);
+        let occ = recur::occurrences(
+            &item,
+            NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 21).unwrap(),
+            tz,
+        );
         let rid = occ[0].rid;
         shift_days(&mut t.store, &mut t.journal, &e, &uid, rid, 1).unwrap();
         let item = t.store.get(&uid).unwrap().clone();
         assert_eq!(item.overrides.len(), 1);
-        let wed = recur::occurrences(&item, NaiveDate::from_ymd_opt(2026, 10, 21).unwrap(), NaiveDate::from_ymd_opt(2026, 10, 22).unwrap(), tz);
+        let wed = recur::occurrences(
+            &item,
+            NaiveDate::from_ymd_opt(2026, 10, 21).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 22).unwrap(),
+            tz,
+        );
         assert_eq!(wed.len(), 2, "the moved Tuesday and Wednesday's own");
         remove(&mut t.store, &mut t.journal, &e, &uid, rid).unwrap();
         let item = t.store.get(&uid).unwrap().clone();
         assert!(item.overrides.is_empty());
         assert_eq!(item.exdates.len(), 1);
-        let tue = recur::occurrences(&item, NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(), NaiveDate::from_ymd_opt(2026, 10, 22).unwrap(), tz);
+        let tue = recur::occurrences(
+            &item,
+            NaiveDate::from_ymd_opt(2026, 10, 20).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 22).unwrap(),
+            tz,
+        );
         assert_eq!(tue.len(), 1);
     }
 
@@ -796,8 +1144,28 @@ mod tests {
         let mut t = setup("sub");
         let cfg = t.cfg.clone();
         let e = env(&cfg);
-        let p = add(&mut t.store, &mut t.journal, &e, "plan trip", None, &Defaults::default()).unwrap().uid.unwrap();
-        let c = add(&mut t.store, &mut t.journal, &e, "book flights", None, &Defaults::default()).unwrap().uid.unwrap();
+        let p = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "plan trip",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap()
+        .uid
+        .unwrap();
+        let c = add(
+            &mut t.store,
+            &mut t.journal,
+            &e,
+            "book flights",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap()
+        .uid
+        .unwrap();
         set_parent(&mut t.store, &mut t.journal, &e, &c, Some(&p)).unwrap();
         assert!(set_parent(&mut t.store, &mut t.journal, &e, &p, Some(&c)).is_err());
         let r = remove(&mut t.store, &mut t.journal, &e, &p, None).unwrap();

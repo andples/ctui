@@ -42,7 +42,9 @@ const MAX_BYTES: usize = 32 * 1024 * 1024;
 
 impl Journal {
     pub fn load(state_dir: &Path) -> Self {
-        Self { path: state_dir.join("undo.json") }
+        Self {
+            path: state_dir.join("undo.json"),
+        }
     }
 
     fn read(&self, root: &Path) -> Stacks {
@@ -50,7 +52,14 @@ impl Journal {
             .ok()
             .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or_default();
-        if s.root == root { s } else { Stacks { root: root.to_path_buf(), ..Stacks::default() } }
+        if s.root == root {
+            s
+        } else {
+            Stacks {
+                root: root.to_path_buf(),
+                ..Stacks::default()
+            }
+        }
     }
 
     fn write(&self, s: &Stacks) -> Result<()> {
@@ -65,12 +74,23 @@ impl Journal {
 
     pub fn record(&mut self, root: &Path, label: &str, files: Vec<FileChange>) -> Result<()> {
         let mut s = self.read(root);
-        s.undo.push(Entry { label: label.to_string(), files });
+        s.undo.push(Entry {
+            label: label.to_string(),
+            files,
+        });
         s.redo.clear();
         let size = |e: &Entry| -> usize {
-            e.files.iter().map(|f| f.before.as_ref().map_or(0, String::len) + f.after.as_ref().map_or(0, String::len)).sum()
+            e.files
+                .iter()
+                .map(|f| {
+                    f.before.as_ref().map_or(0, String::len)
+                        + f.after.as_ref().map_or(0, String::len)
+                })
+                .sum()
         };
-        while s.undo.len() > KEEP || (s.undo.len() > 1 && s.undo.iter().map(size).sum::<usize>() > MAX_BYTES) {
+        while s.undo.len() > KEEP
+            || (s.undo.len() > 1 && s.undo.iter().map(size).sum::<usize>() > MAX_BYTES)
+        {
             s.undo.remove(0);
         }
         self.write(&s)
@@ -79,7 +99,9 @@ impl Journal {
     /// Undoes the last step; returns its label, or `None` when there's nothing.
     pub fn undo(&mut self, store: &mut Store) -> Result<Option<String>> {
         let mut s = self.read(&store.root);
-        let Some(entry) = s.undo.pop() else { return Ok(None) };
+        let Some(entry) = s.undo.pop() else {
+            return Ok(None);
+        };
         store.replay(&entry.files, true)?;
         let label = entry.label.clone();
         s.redo.push(entry);
@@ -89,7 +111,9 @@ impl Journal {
 
     pub fn redo(&mut self, store: &mut Store) -> Result<Option<String>> {
         let mut s = self.read(&store.root);
-        let Some(entry) = s.redo.pop() else { return Ok(None) };
+        let Some(entry) = s.redo.pop() else {
+            return Ok(None);
+        };
         store.replay(&entry.files, false)?;
         let label = entry.label.clone();
         s.undo.push(entry);

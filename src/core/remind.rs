@@ -36,7 +36,13 @@ pub fn between(store: &Store, from: DateTime<Tz>, to: DateTime<Tz>, tz: Tz) -> V
                     for off in &occ.f.alarms {
                         let fires = at - *off;
                         if fires > from && fires <= to {
-                            out.push(Alert { title: occ.f.title.clone(), list: item.list.clone(), at, fires, kind: Kind::Event });
+                            out.push(Alert {
+                                title: occ.f.title.clone(),
+                                list: item.list.clone(),
+                                at,
+                                fires,
+                                kind: Kind::Event,
+                            });
                         }
                     }
                 }
@@ -55,7 +61,13 @@ pub fn between(store: &Store, from: DateTime<Tz>, to: DateTime<Tz>, tz: Tz) -> V
                 for off in &item.f.alarms {
                     let fires = at - *off;
                     if fires > from && fires <= to {
-                        out.push(Alert { title: item.f.title.clone(), list: item.list.clone(), at, fires, kind: Kind::Task });
+                        out.push(Alert {
+                            title: item.f.title.clone(),
+                            list: item.list.clone(),
+                            at,
+                            fires,
+                            kind: Kind::Task,
+                        });
                     }
                 }
             }
@@ -79,7 +91,10 @@ pub fn last_run(state_dir: &Path, now: DateTime<Tz>) -> DateTime<Tz> {
 
 pub fn save_run(state_dir: &Path, now: DateTime<Tz>) -> anyhow::Result<()> {
     fs::create_dir_all(state_dir)?;
-    fs::write(state_dir.join("remind-last"), now.with_timezone(&Utc).to_rfc3339())?;
+    fs::write(
+        state_dir.join("remind-last"),
+        now.with_timezone(&Utc).to_rfc3339(),
+    )?;
     Ok(())
 }
 
@@ -101,17 +116,49 @@ mod tests {
         let tz = Tz::Europe__London;
         let now = tz.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap();
         let env = Env { now, tz, cfg: &cfg };
-        ops::add(&mut store, &mut j, &env, "dentist today 14:00-15:00 remind 1h", None, &Defaults::default()).unwrap();
-        ops::add(&mut store, &mut j, &env, "call today 13:30 remind 30m", None, &Defaults::default()).unwrap();
-        ops::add(&mut store, &mut j, &env, "standup every day 9:00-9:15 remind 10m", None, &Defaults::default()).unwrap();
+        ops::add(
+            &mut store,
+            &mut j,
+            &env,
+            "dentist today 14:00-15:00 remind 1h",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap();
+        ops::add(
+            &mut store,
+            &mut j,
+            &env,
+            "call today 13:30 remind 30m",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap();
+        ops::add(
+            &mut store,
+            &mut j,
+            &env,
+            "standup every day 9:00-9:15 remind 10m",
+            None,
+            &Defaults::default(),
+        )
+        .unwrap();
         let a = between(&store, now, now + Duration::hours(1), tz);
         let titles: Vec<&str> = a.iter().map(|x| x.title.as_str()).collect();
         assert_eq!(titles, vec!["call", "dentist"]);
-        let next_morning = between(&store, now + Duration::hours(20), now + Duration::hours(21), tz);
+        let next_morning = between(
+            &store,
+            now + Duration::hours(20),
+            now + Duration::hours(21),
+            tz,
+        );
         assert_eq!(next_morning.len(), 1, "tomorrow's standup reminder at 8:50");
         assert!(last_run(&dir.join("state"), now) < now);
         save_run(&dir.join("state"), now).unwrap();
-        assert_eq!(last_run(&dir.join("state"), now + Duration::minutes(5)), now);
+        assert_eq!(
+            last_run(&dir.join("state"), now + Duration::minutes(5)),
+            now
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

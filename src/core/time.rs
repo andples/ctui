@@ -23,10 +23,14 @@ impl Moment {
     /// from Outlook, say) are read as floating local time.
     pub fn from_prop(p: &Prop) -> Option<Self> {
         let v = p.value.trim();
-        let is_date = p.param("VALUE").is_some_and(|x| x.eq_ignore_ascii_case("DATE"))
+        let is_date = p
+            .param("VALUE")
+            .is_some_and(|x| x.eq_ignore_ascii_case("DATE"))
             || (v.len() == 8 && !v.contains('T'));
         if is_date {
-            return NaiveDate::parse_from_str(&v[..8.min(v.len())], "%Y%m%d").ok().map(Moment::Date);
+            return NaiveDate::parse_from_str(&v[..8.min(v.len())], "%Y%m%d")
+                .ok()
+                .map(Moment::Date);
         }
         let (body, utc) = match v.strip_suffix(['Z', 'z']) {
             Some(b) => (b, true),
@@ -38,7 +42,12 @@ impl Moment {
         if utc {
             return Some(Moment::Zoned(Tz::UTC.from_utc_datetime(&naive)));
         }
-        match p.param("TZID").and_then(|t| t.trim_matches('"').trim_start_matches('/').parse::<Tz>().ok()) {
+        match p.param("TZID").and_then(|t| {
+            t.trim_matches('"')
+                .trim_start_matches('/')
+                .parse::<Tz>()
+                .ok()
+        }) {
             Some(tz) => Some(Moment::Zoned(resolve(tz, naive))),
             None => Some(Moment::Floating(naive)),
         }
@@ -46,13 +55,17 @@ impl Moment {
 
     pub fn to_prop(&self, name: &str) -> Prop {
         match self {
-            Moment::Date(d) => Prop::new(name, d.format("%Y%m%d").to_string()).with_param("VALUE", "DATE"),
+            Moment::Date(d) => {
+                Prop::new(name, d.format("%Y%m%d").to_string()).with_param("VALUE", "DATE")
+            }
             Moment::Floating(n) => Prop::new(name, n.format("%Y%m%dT%H%M%S").to_string()),
             Moment::Zoned(dt) if dt.timezone() == Tz::UTC => {
                 Prop::new(name, dt.naive_utc().format("%Y%m%dT%H%M%SZ").to_string())
             }
-            Moment::Zoned(dt) => Prop::new(name, dt.naive_local().format("%Y%m%dT%H%M%S").to_string())
-                .with_param("TZID", dt.timezone().name()),
+            Moment::Zoned(dt) => {
+                Prop::new(name, dt.naive_local().format("%Y%m%dT%H%M%S").to_string())
+                    .with_param("TZID", dt.timezone().name())
+            }
         }
     }
 
@@ -130,7 +143,9 @@ pub fn resolve(tz: Tz, naive: NaiveDateTime) -> DateTime<Tz> {
             let mut probe = naive;
             for _ in 0..8 {
                 probe += Duration::minutes(30);
-                if let LocalResult::Single(dt) | LocalResult::Ambiguous(dt, _) = tz.from_local_datetime(&probe) {
+                if let LocalResult::Single(dt) | LocalResult::Ambiguous(dt, _) =
+                    tz.from_local_datetime(&probe)
+                {
                     return dt;
                 }
             }
@@ -141,12 +156,15 @@ pub fn resolve(tz: Tz, naive: NaiveDateTime) -> DateTime<Tz> {
 
 /// The machine's zone (`TZ`, then the system setting), UTC if unknown.
 pub fn local_zone() -> Tz {
-    if let Ok(tz) = std::env::var("TZ") {
-        if let Ok(z) = tz.trim_start_matches(':').parse::<Tz>() {
-            return z;
-        }
+    if let Ok(tz) = std::env::var("TZ")
+        && let Ok(z) = tz.trim_start_matches(':').parse::<Tz>()
+    {
+        return z;
     }
-    iana_time_zone::get_timezone().ok().and_then(|n| n.parse().ok()).unwrap_or(Tz::UTC)
+    iana_time_zone::get_timezone()
+        .ok()
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(Tz::UTC)
 }
 
 pub fn now_in(tz: Tz) -> DateTime<Tz> {
@@ -221,7 +239,11 @@ pub fn week_start_of(d: NaiveDate, start: Weekday) -> NaiveDate {
 }
 
 pub fn last_of_month(d: NaiveDate) -> NaiveDate {
-    let (y, m) = if d.month() == 12 { (d.year() + 1, 1) } else { (d.year(), d.month() + 1) };
+    let (y, m) = if d.month() == 12 {
+        (d.year() + 1, 1)
+    } else {
+        (d.year(), d.month() + 1)
+    };
     NaiveDate::from_ymd_opt(y, m, 1).expect("valid month") - Duration::days(1)
 }
 
@@ -243,7 +265,8 @@ mod tests {
     use super::*;
 
     fn prop(line: &str) -> Prop {
-        super::super::ical::parse(&format!("BEGIN:X\r\n{line}\r\nEND:X\r\n")).unwrap()[0].props[0].clone()
+        super::super::ical::parse(&format!("BEGIN:X\r\n{line}\r\nEND:X\r\n")).unwrap()[0].props[0]
+            .clone()
     }
 
     #[test]
@@ -253,10 +276,17 @@ mod tests {
             Some(Moment::Date(NaiveDate::from_ymd_opt(2026, 10, 20).unwrap()))
         );
         let z = Moment::from_prop(&prop("DTSTART:20261020T120000Z")).unwrap();
-        assert_eq!(z.local(Tz::Europe__London).time(), NaiveTime::from_hms_opt(13, 0, 0).unwrap());
+        assert_eq!(
+            z.local(Tz::Europe__London).time(),
+            NaiveTime::from_hms_opt(13, 0, 0).unwrap()
+        );
         let t = Moment::from_prop(&prop("DTSTART;TZID=America/New_York:20261020T090000")).unwrap();
-        assert_eq!(t.local(Tz::UTC).time(), NaiveTime::from_hms_opt(13, 0, 0).unwrap());
-        let w = Moment::from_prop(&prop("DTSTART;TZID=Pacific Standard Time:20261020T090000")).unwrap();
+        assert_eq!(
+            t.local(Tz::UTC).time(),
+            NaiveTime::from_hms_opt(13, 0, 0).unwrap()
+        );
+        let w =
+            Moment::from_prop(&prop("DTSTART;TZID=Pacific Standard Time:20261020T090000")).unwrap();
         assert!(matches!(w, Moment::Floating(_)));
     }
 
@@ -280,7 +310,12 @@ mod tests {
         assert_eq!(parse_duration("-P1DT2H"), Some(-Duration::hours(26)));
         assert_eq!(parse_duration("P2W"), Some(Duration::weeks(2)));
         assert_eq!(parse_duration("P1X"), None);
-        for d in [Duration::minutes(10), -Duration::minutes(90), Duration::days(1), Duration::zero()] {
+        for d in [
+            Duration::minutes(10),
+            -Duration::minutes(90),
+            Duration::days(1),
+            Duration::zero(),
+        ] {
             assert_eq!(parse_duration(&format_duration(d)), Some(d));
         }
     }
@@ -288,19 +323,37 @@ mod tests {
     #[test]
     fn dst_gap_moves_forward() {
         let tz = Tz::Europe__London;
-        let gap = NaiveDate::from_ymd_opt(2026, 3, 29).unwrap().and_hms_opt(1, 30, 0).unwrap();
-        assert_eq!(resolve(tz, gap).naive_local().time(), NaiveTime::from_hms_opt(2, 0, 0).unwrap());
+        let gap = NaiveDate::from_ymd_opt(2026, 3, 29)
+            .unwrap()
+            .and_hms_opt(1, 30, 0)
+            .unwrap();
+        assert_eq!(
+            resolve(tz, gap).naive_local().time(),
+            NaiveTime::from_hms_opt(2, 0, 0).unwrap()
+        );
     }
 
     #[test]
     fn month_math() {
         let jan31 = NaiveDate::from_ymd_opt(2026, 1, 31).unwrap();
-        assert_eq!(add_months(jan31, 1), NaiveDate::from_ymd_opt(2026, 2, 28).unwrap());
-        assert_eq!(add_months(jan31, -2), NaiveDate::from_ymd_opt(2025, 11, 30).unwrap());
+        assert_eq!(
+            add_months(jan31, 1),
+            NaiveDate::from_ymd_opt(2026, 2, 28).unwrap()
+        );
+        assert_eq!(
+            add_months(jan31, -2),
+            NaiveDate::from_ymd_opt(2025, 11, 30).unwrap()
+        );
         let feb = NaiveDate::from_ymd_opt(2028, 2, 10).unwrap();
         assert_eq!(last_of_month(feb).day(), 29);
         let wed = NaiveDate::from_ymd_opt(2026, 10, 14).unwrap();
-        assert_eq!(week_start_of(wed, Weekday::Mon), NaiveDate::from_ymd_opt(2026, 10, 12).unwrap());
-        assert_eq!(week_start_of(wed, Weekday::Sun), NaiveDate::from_ymd_opt(2026, 10, 11).unwrap());
+        assert_eq!(
+            week_start_of(wed, Weekday::Mon),
+            NaiveDate::from_ymd_opt(2026, 10, 12).unwrap()
+        );
+        assert_eq!(
+            week_start_of(wed, Weekday::Sun),
+            NaiveDate::from_ymd_opt(2026, 10, 11).unwrap()
+        );
     }
 }

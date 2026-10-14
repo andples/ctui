@@ -57,19 +57,33 @@ pub struct Fields {
 
 impl Fields {
     pub fn read(c: &Component) -> Self {
-        let kind = if c.name == "VTODO" { Kind::Task } else { Kind::Event };
+        let kind = if c.name == "VTODO" {
+            Kind::Task
+        } else {
+            Kind::Event
+        };
         let moment = |n: &str| c.get(n).and_then(Moment::from_prop);
         let start = moment("DTSTART");
         let end = moment("DTEND").or_else(|| {
-            let d = c.get("DURATION").and_then(|p| time::parse_duration(&p.value))?;
+            let d = c
+                .get("DURATION")
+                .and_then(|p| time::parse_duration(&p.value))?;
             Some(add(start?, d))
         });
         let status = c.get("STATUS").map(|p| p.value.to_ascii_uppercase());
-        let completed = c.get("COMPLETED").and_then(Moment::from_prop).map(|m| m.instant(Tz::UTC).with_timezone(&Utc));
-        let done = kind == Kind::Task && (status.as_deref() == Some("COMPLETED") || (status.is_none() && completed.is_some()));
+        let completed = c
+            .get("COMPLETED")
+            .and_then(Moment::from_prop)
+            .map(|m| m.instant(Tz::UTC).with_timezone(&Utc));
+        let done = kind == Kind::Task
+            && (status.as_deref() == Some("COMPLETED")
+                || (status.is_none() && completed.is_some()));
         let parent = c
             .get_all("RELATED-TO")
-            .find(|p| p.param("RELTYPE").is_none_or(|t| t.eq_ignore_ascii_case("PARENT")))
+            .find(|p| {
+                p.param("RELTYPE")
+                    .is_none_or(|t| t.eq_ignore_ascii_case("PARENT"))
+            })
             .map(|p| p.value.clone());
         let sort = c
             .get("X-CTUI-SORT")
@@ -79,10 +93,17 @@ impl Fields {
             title: c.text("SUMMARY").unwrap_or_default(),
             start: if kind == Kind::Event { start } else { None },
             end: if kind == Kind::Event { end } else { None },
-            due: if kind == Kind::Task { moment("DUE") } else { None },
+            due: if kind == Kind::Task {
+                moment("DUE")
+            } else {
+                None
+            },
             done,
             completed,
-            priority: c.get("PRIORITY").and_then(|p| p.value.trim().parse::<u8>().ok()).map_or(0, from_ical_priority),
+            priority: c
+                .get("PRIORITY")
+                .and_then(|p| p.value.trim().parse::<u8>().ok())
+                .map_or(0, from_ical_priority),
             rrule: c.get("RRULE").map(|p| p.value.clone()),
             parent,
             sort,
@@ -123,7 +144,10 @@ impl Fields {
                 c.set(Prop::new("STATUS", "COMPLETED"));
                 c.set(Prop::new("PERCENT-COMPLETE", "100"));
                 let at = self.completed.unwrap_or_else(|| now.with_timezone(&Utc));
-                c.set(Prop::new("COMPLETED", at.format("%Y%m%dT%H%M%SZ").to_string()));
+                c.set(Prop::new(
+                    "COMPLETED",
+                    at.format("%Y%m%dT%H%M%SZ").to_string(),
+                ));
             } else {
                 c.set(Prop::new("STATUS", "NEEDS-ACTION"));
                 c.remove("PERCENT-COMPLETE");
@@ -147,7 +171,9 @@ impl Fields {
         }
         if self.parent != base.parent {
             c.props.retain(|p| {
-                !(p.name == "RELATED-TO" && p.param("RELTYPE").is_none_or(|t| t.eq_ignore_ascii_case("PARENT")))
+                !(p.name == "RELATED-TO"
+                    && p.param("RELTYPE")
+                        .is_none_or(|t| t.eq_ignore_ascii_case("PARENT")))
             });
             if let Some(uid) = &self.parent {
                 c.props.push(Prop::new("RELATED-TO", uid.clone()));
@@ -160,22 +186,30 @@ impl Fields {
             }
         }
         if self.alarms != base.alarms {
-            c.children.retain(|a| !(a.name == "VALARM" && simple_alarm(a).is_some()));
+            c.children
+                .retain(|a| !(a.name == "VALARM" && simple_alarm(a).is_some()));
             for off in &self.alarms {
                 let mut a = Component::new("VALARM");
                 a.props.push(Prop::new("ACTION", "DISPLAY"));
-                a.props.push(Prop::new("DESCRIPTION", ical::escape(&self.title)));
-                a.props.push(Prop::new("TRIGGER", time::format_duration(-*off)));
+                a.props
+                    .push(Prop::new("DESCRIPTION", ical::escape(&self.title)));
+                a.props
+                    .push(Prop::new("TRIGGER", time::format_duration(-*off)));
                 c.children.push(a);
             }
         }
         let stamp = time::utc_stamp(now);
         c.set(Prop::new("LAST-MODIFIED", stamp.clone()));
         c.set(Prop::new("DTSTAMP", stamp));
-        if self.start != base.start || self.end != base.end || self.due != base.due || self.rrule != base.rrule {
-            if let Some(seq) = c.get("SEQUENCE").and_then(|p| p.value.trim().parse::<u32>().ok()) {
-                c.set(Prop::new("SEQUENCE", (seq + 1).to_string()));
-            }
+        if (self.start != base.start
+            || self.end != base.end
+            || self.due != base.due
+            || self.rrule != base.rrule)
+            && let Some(seq) = c
+                .get("SEQUENCE")
+                .and_then(|p| p.value.trim().parse::<u32>().ok())
+        {
+            c.set(Prop::new("SEQUENCE", (seq + 1).to_string()));
         }
     }
 
@@ -213,8 +247,12 @@ fn to_ical_priority(p: u8) -> u8 {
 /// A display alarm with a relative trigger before the start, as ctui writes them.
 fn simple_alarm(a: &Component) -> Option<Duration> {
     let trig = a.get("TRIGGER")?;
-    if trig.param("VALUE").is_some_and(|v| v.eq_ignore_ascii_case("DATE-TIME"))
-        || trig.param("RELATED").is_some_and(|v| v.eq_ignore_ascii_case("END"))
+    if trig
+        .param("VALUE")
+        .is_some_and(|v| v.eq_ignore_ascii_case("DATE-TIME"))
+        || trig
+            .param("RELATED")
+            .is_some_and(|v| v.eq_ignore_ascii_case("END"))
     {
         return None;
     }
@@ -223,7 +261,9 @@ fn simple_alarm(a: &Component) -> Option<Duration> {
 }
 
 fn read_alarms(c: &Component) -> Vec<Duration> {
-    c.children_named("VALARM").filter_map(simple_alarm).collect()
+    c.children_named("VALARM")
+        .filter_map(simple_alarm)
+        .collect()
 }
 
 /// One `.ics` file: a task or an event, plus any recurrence overrides.
@@ -249,16 +289,28 @@ impl Item {
     pub fn from_calendar(cal: Component, list: &str, file: &str) -> Option<Self> {
         let idx = master_index(&cal)?;
         let master = &cal.children[idx];
-        let kind = if master.name == "VTODO" { Kind::Task } else { Kind::Event };
-        let uid = master.text("UID").unwrap_or_else(|| file.trim_end_matches(".ics").to_string());
+        let kind = if master.name == "VTODO" {
+            Kind::Task
+        } else {
+            Kind::Event
+        };
+        let uid = master
+            .text("UID")
+            .unwrap_or_else(|| file.trim_end_matches(".ics").to_string());
         let f = Fields::read(master);
         let exdates = master
             .get_all("EXDATE")
             .flat_map(|p| {
-                p.value.split(',').filter_map(|v| {
-                    let one = Prop { value: v.to_string(), ..p.clone() };
-                    Moment::from_prop(&one)
-                }).collect::<Vec<_>>()
+                p.value
+                    .split(',')
+                    .filter_map(|v| {
+                        let one = Prop {
+                            value: v.to_string(),
+                            ..p.clone()
+                        };
+                        Moment::from_prop(&one)
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect();
         let overrides = cal
@@ -267,7 +319,16 @@ impl Item {
             .filter(|c| c.name == master.name && c.get("RECURRENCE-ID").is_some())
             .filter_map(|c| Some((Moment::from_prop(c.get("RECURRENCE-ID")?)?, Fields::read(c))))
             .collect();
-        Some(Self { uid, kind, list: list.to_string(), file: file.to_string(), f, cal, exdates, overrides })
+        Some(Self {
+            uid,
+            kind,
+            list: list.to_string(),
+            file: file.to_string(),
+            f,
+            cal,
+            exdates,
+            overrides,
+        })
     }
 
     /// A new item with a fresh UID, in a fresh VCALENDAR.
@@ -315,7 +376,9 @@ impl Item {
         let f = self.f.clone();
         f.write(self.master_mut(), now);
         let exdates = self.exdates.clone();
-        let read: Vec<Moment> = Item::from_calendar(self.cal.clone(), "", "").map(|i| i.exdates).unwrap_or_default();
+        let read: Vec<Moment> = Item::from_calendar(self.cal.clone(), "", "")
+            .map(|i| i.exdates)
+            .unwrap_or_default();
         if read != exdates {
             let m = self.master_mut();
             m.remove("EXDATE");
@@ -379,7 +442,13 @@ fn master_index(cal: &Component) -> Option<usize> {
 pub fn file_stem(uid: &str) -> String {
     let s: String = uid
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@') { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@') {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if s.is_empty() { "item".into() } else { s }
 }
@@ -401,7 +470,9 @@ mod tests {
     use chrono::TimeZone;
 
     fn now() -> DateTime<Tz> {
-        Tz::Europe__London.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap()
+        Tz::Europe__London
+            .with_ymd_and_hms(2026, 10, 15, 12, 0, 0)
+            .unwrap()
     }
 
     const GOOGLE: &str = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Google Inc//Google Calendar 70.9054//EN\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Europe/London:20261015T093000\r\nDURATION:PT30M\r\nRRULE:FREQ=WEEKLY;BYDAY=MO,WE\r\nEXDATE;TZID=Europe/London:20261019T093000\r\nUID:abc@google.com\r\nSUMMARY:Standup\r\nATTENDEE;CN=Jane:mailto:jane@example.com\r\nX-GOOGLE-CONFERENCE:https://meet.google.com/x\r\nSEQUENCE:3\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:abc@google.com\r\nRECURRENCE-ID;TZID=Europe/London:20261021T093000\r\nDTSTART;TZID=Europe/London:20261021T110000\r\nDTEND;TZID=Europe/London:20261021T113000\r\nSUMMARY:Standup (late)\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -418,7 +489,10 @@ mod tests {
         assert_eq!(it.uid, "abc@google.com");
         assert_eq!(it.f.title, "Standup");
         let tz = Tz::Europe__London;
-        assert_eq!(it.f.end.unwrap().local(tz).format("%H:%M").to_string(), "10:00");
+        assert_eq!(
+            it.f.end.unwrap().local(tz).format("%H:%M").to_string(),
+            "10:00"
+        );
         assert_eq!(it.exdates.len(), 1);
         assert_eq!(it.overrides.len(), 1);
         assert_eq!(it.overrides[0].1.title, "Standup (late)");
@@ -441,7 +515,10 @@ mod tests {
         assert!(text.contains("SUMMARY:Daily standup"));
         assert!(text.contains("X-GOOGLE-CONFERENCE:https://meet.google.com/x"));
         assert!(text.contains("ATTENDEE;CN=Jane:mailto:jane@example.com"));
-        assert!(text.contains("DURATION:PT30M"), "duration kept when times didn't change");
+        assert!(
+            text.contains("DURATION:PT30M"),
+            "duration kept when times didn't change"
+        );
         assert!(text.contains("SEQUENCE:3"));
         assert!(text.contains("Standup (late)"));
     }
@@ -469,11 +546,21 @@ mod tests {
         };
         let mut t = Item::new(Kind::Task, "personal", f.clone(), now());
         assert!(t.file.ends_with("@ctui.ics"));
-        let back = Item::from_calendar(ical::parse(&t.to_ics()).unwrap().remove(0), "personal", &t.file).unwrap();
+        let back = Item::from_calendar(
+            ical::parse(&t.to_ics()).unwrap().remove(0),
+            "personal",
+            &t.file,
+        )
+        .unwrap();
         assert_eq!(back.f, f);
         t.f.done = true;
         t.sync(now());
-        let done = Item::from_calendar(ical::parse(&t.to_ics()).unwrap().remove(0), "personal", &t.file).unwrap();
+        let done = Item::from_calendar(
+            ical::parse(&t.to_ics()).unwrap().remove(0),
+            "personal",
+            &t.file,
+        )
+        .unwrap();
         assert!(done.f.done);
         assert!(done.f.completed.is_some());
     }

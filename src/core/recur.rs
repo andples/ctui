@@ -30,11 +30,16 @@ fn rrule_tz(tz: Tz) -> rrule::Tz {
 fn normalize_until(rule: &str, start: &Moment, tz: Tz) -> String {
     rule.split(';')
         .map(|part| {
-            let Some(v) = part.strip_prefix("UNTIL=").or_else(|| part.strip_prefix("until=")) else {
+            let Some(v) = part
+                .strip_prefix("UNTIL=")
+                .or_else(|| part.strip_prefix("until="))
+            else {
                 return part.to_string();
             };
             let naive = if v.len() == 8 {
-                NaiveDate::parse_from_str(v, "%Y%m%d").ok().map(|d| d.and_hms_opt(23, 59, 59).expect("valid"))
+                NaiveDate::parse_from_str(v, "%Y%m%d")
+                    .ok()
+                    .map(|d| d.and_hms_opt(23, 59, 59).expect("valid"))
             } else if !v.ends_with(['Z', 'z']) {
                 NaiveDateTime::parse_from_str(v, "%Y%m%dT%H%M%S").ok()
             } else {
@@ -45,7 +50,10 @@ fn normalize_until(rule: &str, start: &Moment, tz: Tz) -> String {
                 _ => tz,
             };
             match naive {
-                Some(n) => format!("UNTIL={}", time::resolve(zone, n).naive_utc().format("%Y%m%dT%H%M%SZ")),
+                Some(n) => format!(
+                    "UNTIL={}",
+                    time::resolve(zone, n).naive_utc().format("%Y%m%dT%H%M%SZ")
+                ),
                 None => part.to_string(),
             }
         })
@@ -72,7 +80,14 @@ fn back_to_moment(template: &Moment, dt: DateTime<rrule::Tz>) -> Moment {
 }
 
 /// Start instants of `rule` from `start`, within `[after, before]`.
-fn expand(rule: &str, start: &Moment, exdates: &[Moment], after: DateTime<Tz>, before: DateTime<Tz>, tz: Tz) -> Option<Vec<Moment>> {
+fn expand(
+    rule: &str,
+    start: &Moment,
+    exdates: &[Moment],
+    after: DateTime<Tz>,
+    before: DateTime<Tz>,
+    tz: Tz,
+) -> Option<Vec<Moment>> {
     let rule = normalize_until(rule, start, tz);
     let parsed: RRule<Unvalidated> = rule.parse().ok()?;
     let dtstart = anchor(start, tz);
@@ -88,7 +103,12 @@ fn expand(rule: &str, start: &Moment, exdates: &[Moment], after: DateTime<Tz>, b
         .after(rrule::Tz::UTC.from_utc_datetime(&after.naive_utc()))
         .before(rrule::Tz::UTC.from_utc_datetime(&before.naive_utc()));
     let res = set.all(LIMIT);
-    Some(res.dates.into_iter().map(|d| back_to_moment(start, d)).collect())
+    Some(
+        res.dates
+            .into_iter()
+            .map(|d| back_to_moment(start, d))
+            .collect(),
+    )
 }
 
 fn same_moment(a: &Moment, b: &Moment, tz: Tz) -> bool {
@@ -107,8 +127,14 @@ pub fn occurrences(item: &Item, from: NaiveDate, to: NaiveDate, tz: Tz) -> Vec<O
     if item.kind != Kind::Event {
         return Vec::new();
     }
-    let Some(start) = item.f.start else { return Vec::new() };
-    let len = item.f.end.map(|e| e.instant(tz) - start.instant(tz)).unwrap_or_else(Duration::zero);
+    let Some(start) = item.f.start else {
+        return Vec::new();
+    };
+    let len = item
+        .f
+        .end
+        .map(|e| e.instant(tz) - start.instant(tz))
+        .unwrap_or_else(Duration::zero);
     let range_start = day_start(from, tz);
     let range_end = day_start(to, tz);
     let touches = |s: &Moment, e: &Option<Moment>| {
@@ -119,26 +145,51 @@ pub fn occurrences(item: &Item, from: NaiveDate, to: NaiveDate, tz: Tz) -> Vec<O
     };
     let Some(rule) = &item.f.rrule else {
         return if touches(&start, &item.f.end) {
-            vec![Occurrence { rid: None, start, end: item.f.end, f: item.f.clone() }]
+            vec![Occurrence {
+                rid: None,
+                start,
+                end: item.f.end,
+                f: item.f.clone(),
+            }]
         } else {
             Vec::new()
         };
     };
-    let starts = expand(rule, &start, &item.exdates, range_start - len - Duration::seconds(1), range_end, tz)
-        .unwrap_or_else(|| vec![start]);
+    let starts = expand(
+        rule,
+        &start,
+        &item.exdates,
+        range_start - len - Duration::seconds(1),
+        range_end,
+        tz,
+    )
+    .unwrap_or_else(|| vec![start]);
     let mut out = Vec::new();
     let mut used = vec![false; item.overrides.len()];
     for s in starts {
-        let ov = item.overrides.iter().position(|(rid, _)| same_moment(rid, &s, tz));
+        let ov = item
+            .overrides
+            .iter()
+            .position(|(rid, _)| same_moment(rid, &s, tz));
         let occ = match ov {
             Some(i) => {
                 used[i] = true;
                 let of = &item.overrides[i].1;
                 let os = of.start.unwrap_or(s);
                 let oe = of.end.or_else(|| Some(add(&os, len)));
-                Occurrence { rid: Some(s), start: os, end: oe, f: of.clone() }
+                Occurrence {
+                    rid: Some(s),
+                    start: os,
+                    end: oe,
+                    f: of.clone(),
+                }
             }
-            None => Occurrence { rid: Some(s), start: s, end: item.f.end.map(|_| add(&s, len)), f: item.f.clone() },
+            None => Occurrence {
+                rid: Some(s),
+                start: s,
+                end: item.f.end.map(|_| add(&s, len)),
+                f: item.f.clone(),
+            },
         };
         if touches(&occ.start, &occ.end) {
             out.push(occ);
@@ -152,7 +203,12 @@ pub fn occurrences(item: &Item, from: NaiveDate, to: NaiveDate, tz: Tz) -> Vec<O
         let os = of.start.unwrap_or(*rid);
         let oe = of.end.or_else(|| Some(add(&os, len)));
         if touches(&os, &oe) && !item.exdates.iter().any(|e| same_moment(e, rid, tz)) {
-            out.push(Occurrence { rid: Some(*rid), start: os, end: oe, f: of.clone() });
+            out.push(Occurrence {
+                rid: Some(*rid),
+                start: os,
+                end: oe,
+                f: of.clone(),
+            });
         }
     }
     out.sort_by_key(|o| o.start.instant(tz));
@@ -178,7 +234,14 @@ pub fn next_due(rule: &str, due: &Moment, now: DateTime<Tz>, tz: Tz) -> Option<M
         }
         other => other.instant(tz).max(now),
     };
-    let found = expand(rule, due, &[], floor + Duration::seconds(1), floor + Duration::days(3660), tz)?;
+    let found = expand(
+        rule,
+        due,
+        &[],
+        floor + Duration::seconds(1),
+        floor + Duration::days(3660),
+        tz,
+    )?;
     found.into_iter().find(|m| m.instant(tz) > floor)
 }
 
@@ -201,21 +264,27 @@ pub fn describe(rule: &str) -> Option<String> {
         }
     }
     let unit = |one: &str, many: &str| {
-        if interval == 1 { format!("every {one}") } else { format!("every {interval} {many}") }
-    };
-    Some(match (freq?.as_str(), byday.as_deref(), bymonthday.as_deref()) {
-        ("DAILY", None, None) => unit("day", "days"),
-        ("WEEKLY", Some("MO,TU,WE,TH,FR"), None) if interval == 1 => "every weekday".into(),
-        ("WEEKLY", None, None) => unit("week", "weeks"),
-        ("WEEKLY", Some(days), None) if interval == 1 => {
-            let names: Option<Vec<&str>> = days.split(',').map(day_word).collect();
-            format!("every {}", names?.join(","))
+        if interval == 1 {
+            format!("every {one}")
+        } else {
+            format!("every {interval} {many}")
         }
-        ("MONTHLY", None, None) => unit("month", "months"),
-        ("MONTHLY", None, Some(d)) if interval == 1 => format!("every month on {d}"),
-        ("YEARLY", None, None) => unit("year", "years"),
-        _ => return None,
-    })
+    };
+    Some(
+        match (freq?.as_str(), byday.as_deref(), bymonthday.as_deref()) {
+            ("DAILY", None, None) => unit("day", "days"),
+            ("WEEKLY", Some("MO,TU,WE,TH,FR"), None) if interval == 1 => "every weekday".into(),
+            ("WEEKLY", None, None) => unit("week", "weeks"),
+            ("WEEKLY", Some(days), None) if interval == 1 => {
+                let names: Option<Vec<&str>> = days.split(',').map(day_word).collect();
+                format!("every {}", names?.join(","))
+            }
+            ("MONTHLY", None, None) => unit("month", "months"),
+            ("MONTHLY", None, Some(d)) if interval == 1 => format!("every month on {d}"),
+            ("YEARLY", None, None) => unit("year", "years"),
+            _ => return None,
+        },
+    )
 }
 
 fn day_word(code: &str) -> Option<&'static str> {
@@ -249,12 +318,16 @@ mod tests {
     }
 
     fn ev(body: &str) -> Item {
-        item(&format!("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nSUMMARY:s\r\n{body}END:VEVENT\r\nEND:VCALENDAR\r\n"))
+        item(&format!(
+            "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nSUMMARY:s\r\n{body}END:VEVENT\r\nEND:VCALENDAR\r\n"
+        ))
     }
 
     #[test]
     fn single_event_in_and_out_of_range() {
-        let e = ev("DTSTART;TZID=Europe/London:20261015T090000\r\nDTEND;TZID=Europe/London:20261015T100000\r\n");
+        let e = ev(
+            "DTSTART;TZID=Europe/London:20261015T090000\r\nDTEND;TZID=Europe/London:20261015T100000\r\n",
+        );
         assert_eq!(occurrences(&e, d(10, 15), d(10, 16), TZ).len(), 1);
         assert!(occurrences(&e, d(10, 16), d(10, 17), TZ).is_empty());
     }
@@ -282,7 +355,10 @@ mod tests {
         let e = ev("DTSTART;TZID=Europe/London:20261020T090000\r\nRRULE:FREQ=WEEKLY\r\n");
         let occ = occurrences(&e, d(10, 26), d(11, 4), TZ);
         assert_eq!(occ.len(), 2);
-        assert!(occ.iter().all(|o| o.start.time(TZ).unwrap().to_string() == "09:00:00"));
+        assert!(
+            occ.iter()
+                .all(|o| o.start.time(TZ).unwrap().to_string() == "09:00:00")
+        );
     }
 
     #[test]
@@ -295,19 +371,40 @@ mod tests {
     fn task_advances_past_now() {
         let now = TZ.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap();
         let due = Moment::Date(d(10, 10));
-        assert_eq!(next_due("FREQ=DAILY", &due, now, TZ), Some(Moment::Date(d(10, 16))));
+        assert_eq!(
+            next_due("FREQ=DAILY", &due, now, TZ),
+            Some(Moment::Date(d(10, 16)))
+        );
         let rent = Moment::Date(d(10, 1));
-        assert_eq!(next_due("FREQ=MONTHLY", &rent, now, TZ), Some(Moment::Date(d(11, 1))));
+        assert_eq!(
+            next_due("FREQ=MONTHLY", &rent, now, TZ),
+            Some(Moment::Date(d(11, 1)))
+        );
         let timed = Moment::at(TZ, d(10, 15), NaiveTime::from_hms_opt(17, 0, 0));
-        assert_eq!(next_due("FREQ=DAILY", &timed, now, TZ).unwrap().date(TZ), d(10, 16));
+        assert_eq!(
+            next_due("FREQ=DAILY", &timed, now, TZ).unwrap().date(TZ),
+            d(10, 16)
+        );
     }
 
     #[test]
     fn descriptions() {
-        assert_eq!(describe("FREQ=WEEKLY;INTERVAL=2").as_deref(), Some("every 2 weeks"));
-        assert_eq!(describe("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR").as_deref(), Some("every weekday"));
-        assert_eq!(describe("FREQ=WEEKLY;BYDAY=MO,WE").as_deref(), Some("every mon,wed"));
-        assert_eq!(describe("FREQ=MONTHLY;BYMONTHDAY=1").as_deref(), Some("every month on 1"));
+        assert_eq!(
+            describe("FREQ=WEEKLY;INTERVAL=2").as_deref(),
+            Some("every 2 weeks")
+        );
+        assert_eq!(
+            describe("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR").as_deref(),
+            Some("every weekday")
+        );
+        assert_eq!(
+            describe("FREQ=WEEKLY;BYDAY=MO,WE").as_deref(),
+            Some("every mon,wed")
+        );
+        assert_eq!(
+            describe("FREQ=MONTHLY;BYMONTHDAY=1").as_deref(),
+            Some("every month on 1")
+        );
         assert_eq!(describe("FREQ=MONTHLY;BYSETPOS=-1;BYDAY=FR"), None);
     }
 }

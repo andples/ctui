@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDate};
-use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
 use super::ical::{self, Component, Prop};
@@ -39,7 +38,9 @@ fn hash(text: &str) -> u64 {
 }
 
 fn stem_name(path: &Path) -> String {
-    path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "calendar".into())
+    path.file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "calendar".into())
 }
 
 fn sources_from_ics(text: &str, fallback_name: &str) -> Result<Vec<Source>> {
@@ -48,8 +49,14 @@ fn sources_from_ics(text: &str, fallback_name: &str) -> Result<Vec<Source>> {
         .into_iter()
         .filter(|c| c.name == "VCALENDAR")
         .map(|cal| Source {
-            name: cal.text("X-WR-CALNAME").filter(|n| !n.trim().is_empty()).unwrap_or_else(|| fallback_name.to_string()),
-            color: cal.get("X-APPLE-CALENDAR-COLOR").or_else(|| cal.get("COLOR")).and_then(|p| normalize_color(&p.value)),
+            name: cal
+                .text("X-WR-CALNAME")
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| fallback_name.to_string()),
+            color: cal
+                .get("X-APPLE-CALENDAR-COLOR")
+                .or_else(|| cal.get("COLOR"))
+                .and_then(|p| normalize_color(&p.value)),
             cal,
         })
         .collect())
@@ -58,27 +65,48 @@ fn sources_from_ics(text: &str, fallback_name: &str) -> Result<Vec<Source>> {
 /// Google Takeout's `Tasks.json`: task lists of tasks.
 fn sources_from_tasks_json(text: &str) -> Result<Vec<Source>> {
     let v: serde_json::Value = serde_json::from_str(text).context("reading Tasks.json")?;
-    let lists = v.get("items").and_then(|x| x.as_array()).context("Tasks.json has no task lists")?;
+    let lists = v
+        .get("items")
+        .and_then(|x| x.as_array())
+        .context("Tasks.json has no task lists")?;
     let mut out = Vec::new();
     for list in lists {
-        let name = list.get("title").and_then(|x| x.as_str()).unwrap_or("Tasks").to_string();
+        let name = list
+            .get("title")
+            .and_then(|x| x.as_str())
+            .unwrap_or("Tasks")
+            .to_string();
         let mut cal = Component::new("VCALENDAR");
         cal.props.push(Prop::new("VERSION", "2.0"));
-        cal.props.push(Prop::new("PRODID", "-//ctui//Google Tasks import//EN"));
-        for t in list.get("items").and_then(|x| x.as_array()).into_iter().flatten() {
+        cal.props
+            .push(Prop::new("PRODID", "-//ctui//Google Tasks import//EN"));
+        for t in list
+            .get("items")
+            .and_then(|x| x.as_array())
+            .into_iter()
+            .flatten()
+        {
             let s = |k: &str| t.get(k).and_then(|x| x.as_str());
             let Some(id) = s("id") else { continue };
             let mut c = Component::new("VTODO");
-            c.props.push(Prop::new("UID", ical::escape(&format!("{id}@google-tasks"))));
-            c.props.push(Prop::new("SUMMARY", ical::escape(s("title").unwrap_or(""))));
+            c.props.push(Prop::new(
+                "UID",
+                ical::escape(&format!("{id}@google-tasks")),
+            ));
+            c.props
+                .push(Prop::new("SUMMARY", ical::escape(s("title").unwrap_or(""))));
             if let Some(n) = s("notes").filter(|n| !n.is_empty()) {
                 c.props.push(Prop::new("DESCRIPTION", ical::escape(n)));
             }
-            if let Some(due) = s("due").and_then(|d| d.get(..10)).and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()) {
+            if let Some(due) = s("due")
+                .and_then(|d| d.get(..10))
+                .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok())
+            {
                 c.props.push(super::time::Moment::Date(due).to_prop("DUE"));
             }
             let stamp = |k: &str| {
-                s(k).and_then(|x| DateTime::parse_from_rfc3339(x).ok()).map(|d| d.naive_utc().format("%Y%m%dT%H%M%SZ").to_string())
+                s(k).and_then(|x| DateTime::parse_from_rfc3339(x).ok())
+                    .map(|d| d.naive_utc().format("%Y%m%dT%H%M%SZ").to_string())
             };
             if s("status") == Some("completed") {
                 c.props.push(Prop::new("STATUS", "COMPLETED"));
@@ -93,11 +121,18 @@ fn sources_from_tasks_json(text: &str) -> Result<Vec<Source>> {
                 c.props.push(Prop::new("DTSTAMP", at));
             }
             if let Some(p) = s("parent") {
-                c.props.push(Prop::new("RELATED-TO", ical::escape(&format!("{p}@google-tasks"))));
+                c.props.push(Prop::new(
+                    "RELATED-TO",
+                    ical::escape(&format!("{p}@google-tasks")),
+                ));
             }
             cal.children.push(c);
         }
-        out.push(Source { name, color: None, cal });
+        out.push(Source {
+            name,
+            color: None,
+            cal,
+        });
     }
     Ok(out)
 }
@@ -133,31 +168,50 @@ pub fn read_path(path: &Path) -> Result<Vec<Source>> {
         }
         files.sort();
         for p in files {
-            let n = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+            let n = p
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
             let l = n.to_ascii_lowercase();
             if l.ends_with(".ics") || l == "tasks.json" {
-                out.extend(sources_from_file(&n, fs::read(&p)?).with_context(|| p.display().to_string())?);
+                out.extend(
+                    sources_from_file(&n, fs::read(&p)?)
+                        .with_context(|| p.display().to_string())?,
+                );
             }
         }
         return Ok(out);
     }
     let bytes = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
     if name.to_ascii_lowercase().ends_with(".zip") {
-        let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).context("reading the zip")?;
+        let mut zip =
+            zip::ZipArchive::new(std::io::Cursor::new(bytes)).context("reading the zip")?;
         let mut out = Vec::new();
-        let mut names: Vec<String> = zip.file_names().filter_map(|n| n.ok().map(|n| n.to_string())).collect();
+        let mut names: Vec<String> = zip
+            .file_names()
+            .filter_map(|n| n.ok().map(|n| n.to_string()))
+            .collect();
         names.sort();
         for n in names {
             let l = n.to_ascii_lowercase();
-            let file = Path::new(&n).file_name().map(|f| f.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+            let file = Path::new(&n)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_ascii_lowercase())
+                .unwrap_or_default();
             if !(l.ends_with(".ics") || file == "tasks.json") {
                 continue;
             }
             let mut f = zip.by_name(&n)?;
             let mut buf = Vec::new();
             f.read_to_end(&mut buf)?;
-            let short = Path::new(&n).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or(n.clone());
+            let short = Path::new(&n)
+                .file_name()
+                .map(|f| f.to_string_lossy().to_string())
+                .unwrap_or(n.clone());
             out.extend(sources_from_file(&short, buf).with_context(|| n.clone())?);
         }
         return Ok(out);
@@ -180,7 +234,10 @@ struct Seen {
 
 impl Index {
     pub fn load(state_dir: &Path) -> Self {
-        fs::read_to_string(state_dir.join("imports.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default()
+        fs::read_to_string(state_dir.join("imports.json"))
+            .ok()
+            .and_then(|t| serde_json::from_str(&t).ok())
+            .unwrap_or_default()
     }
 
     pub fn save(&self, state_dir: &Path) -> Result<()> {
@@ -209,8 +266,14 @@ fn split(cal: &Component) -> Vec<(String, Component)> {
         .filter_map(|z| Some((z.text("TZID")?, z)))
         .collect();
     let mut groups: Vec<(String, Vec<&Component>)> = Vec::new();
-    for c in cal.children.iter().filter(|c| c.name == "VEVENT" || c.name == "VTODO") {
-        let uid = c.text("UID").unwrap_or_else(|| format!("{:016x}@import", hash(&ical::write(c))));
+    for c in cal
+        .children
+        .iter()
+        .filter(|c| c.name == "VEVENT" || c.name == "VTODO")
+    {
+        let uid = c
+            .text("UID")
+            .unwrap_or_else(|| format!("{:016x}@import", hash(&ical::write(c))));
         match groups.iter_mut().find(|(u, _)| *u == uid) {
             Some((_, v)) => v.push(c),
             None => groups.push((uid, vec![c])),
@@ -231,10 +294,10 @@ fn split(cal: &Component) -> Vec<(String, Component)> {
             let mut used: Vec<String> = Vec::new();
             for c in &comps {
                 for p in &c.props {
-                    if let Some(t) = p.param("TZID") {
-                        if !used.iter().any(|u| u == t) {
-                            used.push(t.to_string());
-                        }
+                    if let Some(t) = p.param("TZID")
+                        && !used.iter().any(|u| u == t)
+                    {
+                        used.push(t.to_string());
                     }
                 }
             }
@@ -272,9 +335,15 @@ pub fn plan(store: &Store, index: &Index, sources: &[Source], into: Option<&str>
         if store.list(&list).is_none() && planned_lists.insert(list.clone()) {
             super::store::validate_list_id(&list)?;
             let name = (into.is_none() && src.name != list).then(|| src.name.clone());
-            p.changes.push(Change::CreateList { id: list.clone(), name });
+            p.changes.push(Change::CreateList {
+                id: list.clone(),
+                name,
+            });
             if let Some(c) = &src.color {
-                p.changes.push(Change::SetListColor { id: list.clone(), color: Some(c.clone()) });
+                p.changes.push(Change::SetListColor {
+                    id: list.clone(),
+                    color: Some(c.clone()),
+                });
             }
             p.new_lists.push(list.clone());
         }
@@ -284,12 +353,22 @@ pub fn plan(store: &Store, index: &Index, sources: &[Source], into: Option<&str>
             }
             let text = ical::write(&cal);
             let source = hash(&text);
-            let Some(mut item) = Item::from_calendar(cal, &list, &format!("{}.ics", file_stem(&uid))) else { continue };
+            let Some(mut item) =
+                Item::from_calendar(cal, &list, &format!("{}.ics", file_stem(&uid)))
+            else {
+                continue;
+            };
             let title = item.f.title.clone();
             let existing = store.get(&uid);
             match (existing, index.items.get(&uid)) {
                 (None, None) => {
-                    p.seen.push((uid.clone(), Seen { source, written: hash(&item.to_ics()) }));
+                    p.seen.push((
+                        uid.clone(),
+                        Seen {
+                            source,
+                            written: hash(&item.to_ics()),
+                        },
+                    ));
                     p.added.push(title);
                     p.changes.push(Change::Put(item));
                 }
@@ -298,7 +377,13 @@ pub fn plan(store: &Store, index: &Index, sources: &[Source], into: Option<&str>
                 (Some(cur), Some(seen)) if hash(&cur.to_ics()) == seen.written => {
                     item.list = cur.list.clone();
                     item.file = cur.file.clone();
-                    p.seen.push((uid.clone(), Seen { source, written: hash(&item.to_ics()) }));
+                    p.seen.push((
+                        uid.clone(),
+                        Seen {
+                            source,
+                            written: hash(&item.to_ics()),
+                        },
+                    ));
                     p.updated.push(title);
                     p.changes.push(Change::Put(item));
                 }
@@ -315,7 +400,13 @@ pub fn plan(store: &Store, index: &Index, sources: &[Source], into: Option<&str>
     Ok(p)
 }
 
-pub fn apply(store: &mut Store, journal: &mut Journal, index: &mut Index, plan: Plan, label: &str) -> Result<()> {
+pub fn apply(
+    store: &mut Store,
+    journal: &mut Journal,
+    index: &mut Index,
+    plan: Plan,
+    label: &str,
+) -> Result<()> {
     if !plan.changes.is_empty() {
         store.commit(journal, label, plan.changes)?;
     }
@@ -331,13 +422,19 @@ pub fn export(store: &Store, list: Option<&str>) -> String {
     cal.props.push(Prop::new("VERSION", "2.0"));
     cal.props.push(Prop::new("PRODID", "-//ctui//ctui//EN"));
     if let Some(l) = list.and_then(|l| store.list(l)) {
-        cal.props.push(Prop::new("X-WR-CALNAME", ical::escape(&l.name)));
+        cal.props
+            .push(Prop::new("X-WR-CALNAME", ical::escape(&l.name)));
         if let Some(c) = &l.color {
-            cal.props.push(Prop::new("X-APPLE-CALENDAR-COLOR", c.clone()));
+            cal.props
+                .push(Prop::new("X-APPLE-CALENDAR-COLOR", c.clone()));
         }
     }
     let mut zones: HashSet<String> = HashSet::new();
-    let mut items: Vec<&Item> = store.items.iter().filter(|i| list.is_none_or(|l| i.list == l)).collect();
+    let mut items: Vec<&Item> = store
+        .items
+        .iter()
+        .filter(|i| list.is_none_or(|l| i.list == l))
+        .collect();
     items.sort_by(|a, b| (&a.list, &a.file).cmp(&(&b.list, &b.file)));
     for item in items {
         for c in &item.cal.children {
@@ -359,6 +456,7 @@ pub fn export(store: &Store, list: Option<&str>) -> String {
 mod tests {
     use super::*;
     use crate::core::model::Kind;
+    use chrono_tz::Tz;
 
     const TAKEOUT: &str = "BEGIN:VCALENDAR\r\nPRODID:-//Google Inc//Google Calendar 70.9054//EN\r\nVERSION:2.0\r\nX-WR-CALNAME:Work Stuff\r\nBEGIN:VTIMEZONE\r\nTZID:Europe/London\r\nBEGIN:STANDARD\r\nTZOFFSETFROM:+0100\r\nTZOFFSETTO:+0000\r\nDTSTART:19701025T020000\r\nEND:STANDARD\r\nEND:VTIMEZONE\r\nBEGIN:VEVENT\r\nDTSTART;TZID=Europe/London:20261015T093000\r\nDTEND;TZID=Europe/London:20261015T100000\r\nUID:one@google.com\r\nSUMMARY:Standup\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261017\r\nUID:two@google.com\r\nSUMMARY:Birthday\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
 
@@ -382,14 +480,28 @@ mod tests {
         apply(&mut store, &mut j, &mut idx, p, "import").unwrap();
         assert_eq!(store.list("work-stuff").unwrap().name, "Work Stuff");
         let standup = store.get("one@google.com").unwrap();
-        assert!(standup.to_ics().contains("BEGIN:VTIMEZONE"), "the zone travels with the item");
-        assert!(!store.get("two@google.com").unwrap().to_ics().contains("VTIMEZONE"));
+        assert!(
+            standup.to_ics().contains("BEGIN:VTIMEZONE"),
+            "the zone travels with the item"
+        );
+        assert!(
+            !store
+                .get("two@google.com")
+                .unwrap()
+                .to_ics()
+                .contains("VTIMEZONE")
+        );
 
         let again = plan(&store, &idx, &src, None).unwrap();
-        assert_eq!((again.added.len(), again.updated.len(), again.unchanged), (0, 0, 2));
+        assert_eq!(
+            (again.added.len(), again.updated.len(), again.unchanged),
+            (0, 0, 2)
+        );
 
         // A newer export changes both; one was edited here.
-        let newer = TAKEOUT.replace("SUMMARY:Standup", "SUMMARY:Daily standup").replace("SUMMARY:Birthday", "SUMMARY:Bday");
+        let newer = TAKEOUT
+            .replace("SUMMARY:Standup", "SUMMARY:Daily standup")
+            .replace("SUMMARY:Birthday", "SUMMARY:Bday");
         let mut b = store.get("two@google.com").unwrap().clone();
         b.f.title = "Sam's birthday".into();
         b.sync(chrono::Utc::now().with_timezone(&Tz::UTC));
@@ -399,8 +511,14 @@ mod tests {
         assert_eq!(p2.updated, vec!["Daily standup"]);
         assert_eq!(p2.skipped, vec!["Bday (edited here)"]);
         apply(&mut store, &mut j, &mut idx, p2, "import").unwrap();
-        assert_eq!(store.get("one@google.com").unwrap().f.title, "Daily standup");
-        assert_eq!(store.get("two@google.com").unwrap().f.title, "Sam's birthday");
+        assert_eq!(
+            store.get("one@google.com").unwrap().f.title,
+            "Daily standup"
+        );
+        assert_eq!(
+            store.get("two@google.com").unwrap().f.title,
+            "Sam's birthday"
+        );
         fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -416,9 +534,26 @@ mod tests {
         let store = Store::open(&dir, None).unwrap();
         let p = plan(&store, &Index::default(), &src, None).unwrap();
         assert_eq!(p.added, vec!["buy milk", "done thing", "sub"]);
-        let items: Vec<&Item> = p.changes.iter().filter_map(|c| if let Change::Put(i) = c { Some(i) } else { None }).collect();
-        assert!(items.iter().all(|i| i.kind == Kind::Task && i.list == "my-tasks"));
-        assert_eq!(items[0].f.due.unwrap().date(Tz::UTC).to_string(), "2026-10-20");
+        let items: Vec<&Item> = p
+            .changes
+            .iter()
+            .filter_map(|c| {
+                if let Change::Put(i) = c {
+                    Some(i)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(
+            items
+                .iter()
+                .all(|i| i.kind == Kind::Task && i.list == "my-tasks")
+        );
+        assert_eq!(
+            items[0].f.due.unwrap().date(Tz::UTC).to_string(),
+            "2026-10-20"
+        );
         assert!(items[1].f.done);
         assert!(items[1].to_ics().contains("DESCRIPTION:keep me"));
         assert_eq!(items[2].f.parent.as_deref(), Some("t1@google-tasks"));
@@ -432,7 +567,8 @@ mod tests {
         {
             let f = fs::File::create(&zpath).unwrap();
             let mut z = zip::ZipWriter::new(f);
-            let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
             z.start_file("Takeout/Calendar/Work.ics", opts).unwrap();
             std::io::Write::write_all(&mut z, TAKEOUT.as_bytes()).unwrap();
             z.start_file("Takeout/Calendar/notes.txt", opts).unwrap();

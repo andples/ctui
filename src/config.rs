@@ -146,7 +146,8 @@ pub fn parse_weekday(s: &str) -> Option<Weekday> {
         Weekday::Sat,
         Weekday::Sun,
     ];
-    all.into_iter().find(|d| s.len() >= 2 && weekday_name(*d).starts_with(&s))
+    all.into_iter()
+        .find(|d| s.len() >= 2 && weekday_name(*d).starts_with(&s))
 }
 
 impl Config {
@@ -154,7 +155,9 @@ impl Config {
     /// is an error with the reason, so the user can fix it.
     pub fn load(path: &Path) -> Result<Self> {
         match fs::read_to_string(path) {
-            Ok(text) => toml::from_str(&text).with_context(|| format!("reading {}", path.display())),
+            Ok(text) => {
+                toml::from_str(&text).with_context(|| format!("reading {}", path.display()))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
         }
@@ -180,13 +183,23 @@ impl Config {
     }
 
     /// Writes a whole sub-table entry, like `list_slots.work = 3`.
-    pub fn set_in_table(&mut self, path: &Path, table_key: &str, key: &str, value: Option<toml::Value>) -> Result<()> {
+    pub fn set_in_table(
+        &mut self,
+        path: &Path,
+        table_key: &str,
+        key: &str,
+        value: Option<toml::Value>,
+    ) -> Result<()> {
         let mut table: toml::Table = match fs::read_to_string(path) {
             Ok(t) => toml::from_str(&t)?,
             Err(_) => toml::Table::new(),
         };
-        let entry = table.entry(table_key.to_string()).or_insert_with(|| toml::Value::Table(toml::Table::new()));
-        let Some(inner) = entry.as_table_mut() else { bail!("{table_key} is not a table") };
+        let entry = table
+            .entry(table_key.to_string())
+            .or_insert_with(|| toml::Value::Table(toml::Table::new()));
+        let Some(inner) = entry.as_table_mut() else {
+            bail!("{table_key} is not a table")
+        };
         match value {
             Some(v) => {
                 inner.insert(key.to_string(), v);
@@ -214,7 +227,10 @@ impl Config {
     }
 
     pub fn views(&self) -> Vec<View> {
-        let v: Vec<View> = View::ALL.into_iter().filter(|v| self.views.contains(v)).collect();
+        let v: Vec<View> = View::ALL
+            .into_iter()
+            .filter(|v| self.views.contains(v))
+            .collect();
         if v.is_empty() { vec![View::Agenda] } else { v }
     }
 }
@@ -239,19 +255,28 @@ pub const SETTINGS: &[(&str, &str)] = &[
 fn parse_value(key: &str, value: &str) -> Result<toml::Value> {
     let value = value.trim();
     Ok(match key {
-        "agenda_days" | "overdue_collapse" => {
-            toml::Value::Integer(value.parse().with_context(|| format!("{key} takes a number"))?)
-        }
+        "agenda_days" | "overdue_collapse" => toml::Value::Integer(
+            value
+                .parse()
+                .with_context(|| format!("{key} takes a number"))?,
+        ),
         "mouse" => toml::Value::Boolean(match value {
             "true" | "on" | "yes" => true,
             "false" | "off" | "no" => false,
             _ => bail!("mouse takes true or false"),
         }),
         "views" => toml::Value::Array(
-            value.split([',', ' ']).filter(|s| !s.is_empty()).map(|s| toml::Value::String(s.into())).collect(),
+            value
+                .split([',', ' '])
+                .filter(|s| !s.is_empty())
+                .map(|s| toml::Value::String(s.into()))
+                .collect(),
         ),
         "week_start" => toml::Value::String(
-            weekday_name(parse_weekday(value).with_context(|| format!("unknown weekday {value:?}"))?).into(),
+            weekday_name(
+                parse_weekday(value).with_context(|| format!("unknown weekday {value:?}"))?,
+            )
+            .into(),
         ),
         k if SETTINGS.iter().any(|(n, _)| *n == k) => toml::Value::String(value.into()),
         _ => bail!("unknown setting {key:?}"),
@@ -278,26 +303,47 @@ pub struct Paths {
 }
 
 impl Paths {
-    pub fn resolve(config_dir: Option<PathBuf>, data_dir: Option<PathBuf>, state_dir: Option<PathBuf>) -> Result<(Self, Config)> {
+    pub fn resolve(
+        config_dir: Option<PathBuf>,
+        data_dir: Option<PathBuf>,
+        state_dir: Option<PathBuf>,
+    ) -> Result<(Self, Config)> {
         let dirs = directories::ProjectDirs::from("", "", "ctui");
         let config_dir = match config_dir {
             Some(d) => d,
-            None => dirs.as_ref().context("no home directory")?.config_dir().to_path_buf(),
+            None => dirs
+                .as_ref()
+                .context("no home directory")?
+                .config_dir()
+                .to_path_buf(),
         };
         let config = Config::load(&config_dir.join("config.toml"))?;
         let data_dir = match (data_dir, &config.data_dir) {
             (Some(d), _) => d,
             (None, Some(d)) => expand_tilde(d),
-            (None, None) => dirs.as_ref().context("no home directory")?.data_dir().to_path_buf(),
+            (None, None) => dirs
+                .as_ref()
+                .context("no home directory")?
+                .data_dir()
+                .to_path_buf(),
         };
         let state_dir = match state_dir {
             Some(d) => d,
             None => {
                 let d = dirs.as_ref().context("no home directory")?;
-                d.state_dir().map(Path::to_path_buf).unwrap_or_else(|| d.data_local_dir().join("state"))
+                d.state_dir()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| d.data_local_dir().join("state"))
             }
         };
-        Ok((Self { config_dir, data_dir, state_dir }, config))
+        Ok((
+            Self {
+                config_dir,
+                data_dir,
+                state_dir,
+            },
+            config,
+        ))
     }
 
     pub fn config_file(&self) -> PathBuf {
@@ -310,10 +356,10 @@ impl Paths {
 }
 
 pub fn expand_tilde(p: &str) -> PathBuf {
-    if let Some(rest) = p.strip_prefix("~/") {
-        if let Some(home) = directories::BaseDirs::new() {
-            return home.home_dir().join(rest);
-        }
+    if let Some(rest) = p.strip_prefix("~/")
+        && let Some(home) = directories::BaseDirs::new()
+    {
+        return home.home_dir().join(rest);
     }
     PathBuf::from(p)
 }

@@ -86,7 +86,11 @@ pub struct Draft {
 impl Draft {
     /// Event when it has a range, a length, a span or `allday`.
     pub fn kind(&self) -> Kind {
-        if self.end_time.is_some() || self.length.is_some() || self.allday || self.end_date.is_some() {
+        if self.end_time.is_some()
+            || self.length.is_some()
+            || self.allday
+            || self.end_date.is_some()
+        {
             Kind::Event
         } else {
             Kind::Task
@@ -98,17 +102,23 @@ impl Draft {
         match &self.list {
             Some(ListPick::Unknown(n)) => return Some(format!("no list #{n} (#{n}! creates it)")),
             Some(ListPick::Ambiguous(n, ids)) => {
-                return Some(format!("#{n} could be {}", ids.iter().map(|i| format!("#{i}")).collect::<Vec<_>>().join(" or ")));
+                return Some(format!(
+                    "#{n} could be {}",
+                    ids.iter()
+                        .map(|i| format!("#{i}"))
+                        .collect::<Vec<_>>()
+                        .join(" or ")
+                ));
             }
             _ => {}
         }
         if self.title.trim().is_empty() {
             return Some("needs a title".into());
         }
-        if let (Some(a), Some(b)) = (self.date, self.end_date) {
-            if b < a {
-                return Some("the span ends before it starts".into());
-            }
+        if let (Some(a), Some(b)) = (self.date, self.end_date)
+            && b < a
+        {
+            return Some("the span ends before it starts".into());
         }
         None
     }
@@ -127,15 +137,16 @@ impl Draft {
                 let d = self.date.map(day).unwrap_or_else(|| "today".into());
                 if let Some(end) = self.end_date.filter(|e| Some(*e) != self.date) {
                     parts.push(format!("{d} – {} all day", day(end)));
-                } else if self.allday || self.time.is_none() {
-                    parts.push(format!("{d} all day"));
-                } else {
-                    let t = self.time.expect("checked");
+                } else if let (Some(t), false) = (self.time, self.allday) {
                     let end = self.end_time.or_else(|| self.length.map(|l| t + l));
                     match end {
-                        Some(e) => parts.push(format!("{d} {}–{}", fmt_time(t, fmt), fmt_time(e, fmt))),
+                        Some(e) => {
+                            parts.push(format!("{d} {}–{}", fmt_time(t, fmt), fmt_time(e, fmt)))
+                        }
                         None => parts.push(format!("{d} {}", fmt_time(t, fmt))),
                     }
+                } else {
+                    parts.push(format!("{d} all day"));
                 }
             }
         }
@@ -218,7 +229,12 @@ fn tokenize(input: &str) -> Vec<Tok> {
                 }
                 text.push(c);
             }
-            out.push(Tok { lower: text.to_lowercase(), text, range: i..end, quoted: true });
+            out.push(Tok {
+                lower: text.to_lowercase(),
+                text,
+                range: i..end,
+                quoted: true,
+            });
             continue;
         }
         let mut end = input.len();
@@ -231,12 +247,19 @@ fn tokenize(input: &str) -> Vec<Tok> {
             text.push(c);
             chars.next();
         }
-        out.push(Tok { lower: text.to_lowercase(), text, range: i..end, quoted: false });
+        out.push(Tok {
+            lower: text.to_lowercase(),
+            text,
+            range: i..end,
+            quoted: false,
+        });
     }
     out
 }
 
-const MONTHS: [&str; 12] = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const MONTHS: [&str; 12] = [
+    "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
+];
 
 fn month(s: &str) -> Option<u32> {
     let s = s.trim_end_matches(['.', ',']);
@@ -244,13 +267,25 @@ fn month(s: &str) -> Option<u32> {
         return None;
     }
     const FULL: [&str; 12] = [
-        "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november",
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
         "december",
     ];
     if s == "sept" {
         return Some(9);
     }
-    FULL.iter().position(|m| m.starts_with(s)).map(|i| i as u32 + 1)
+    FULL.iter()
+        .position(|m| m.starts_with(s))
+        .map(|i| i as u32 + 1)
 }
 
 pub fn weekday(s: &str) -> Option<Weekday> {
@@ -268,7 +303,10 @@ pub fn weekday(s: &str) -> Option<Weekday> {
 
 fn day_number(s: &str) -> Option<u32> {
     let s = s.trim_end_matches(',');
-    let s = ["st", "nd", "rd", "th"].iter().find_map(|x| s.strip_suffix(x)).unwrap_or(s);
+    let s = ["st", "nd", "rd", "th"]
+        .iter()
+        .find_map(|x| s.strip_suffix(x))
+        .unwrap_or(s);
     let n: u32 = s.parse().ok()?;
     (1..=31).contains(&n).then_some(n)
 }
@@ -304,11 +342,15 @@ pub fn parse_length(s: &str) -> Option<Duration> {
     let mut rest = s.as_str();
     let mut any = false;
     while !rest.is_empty() {
-        let n_end = rest.find(|c: char| !(c.is_ascii_digit() || c == '.')).unwrap_or(rest.len());
+        let n_end = rest
+            .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+            .unwrap_or(rest.len());
         num.clear();
         num.push_str(&rest[..n_end]);
         rest = &rest[n_end..];
-        let u_end = rest.find(|c: char| c.is_ascii_digit()).unwrap_or(rest.len());
+        let u_end = rest
+            .find(|c: char| c.is_ascii_digit())
+            .unwrap_or(rest.len());
         let unit = &rest[..u_end];
         rest = &rest[u_end..];
         let n: f64 = num.parse().ok()?;
@@ -376,7 +418,12 @@ fn time_of(s: &str) -> Option<(NaiveTime, Option<bool>)> {
 /// `3-4pm`, `3pm-4pm`, `14:00-15:30`, `11-1pm`.
 fn time_range(s: &str) -> Option<(NaiveTime, NaiveTime)> {
     // Bare "9-17" isn't a range: it needs a ':' or am/pm somewhere.
-    if !(s.contains(':') || s.ends_with('m') || s.contains("m-") || s.ends_with('p') || s.ends_with('a')) {
+    if !(s.contains(':')
+        || s.ends_with('m')
+        || s.contains("m-")
+        || s.ends_with('p')
+        || s.ends_with('a'))
+    {
         return None;
     }
     let (a, b) = s.split_once(['-', '–'])?;
@@ -387,7 +434,11 @@ fn time_range(s: &str) -> Option<(NaiveTime, NaiveTime)> {
             // "3-4pm": the start borrows the end's am/pm.
             let pm = end_pm?;
             let (t, _) = time_of(&format!("{a}{}", if pm { "pm" } else { "am" }))?;
-            if t > end { time_of(&format!("{a}am"))?.0 } else { t }
+            if t > end {
+                time_of(&format!("{a}am"))?.0
+            } else {
+                t
+            }
         }
     };
     Some((start, end))
@@ -404,7 +455,10 @@ struct Parser<'a, 'c> {
 
 impl Parser<'_, '_> {
     fn lower(&self, i: usize) -> Option<&str> {
-        self.toks.get(i).filter(|t| !t.quoted).map(|t| t.lower.as_str())
+        self.toks
+            .get(i)
+            .filter(|t| !t.quoted)
+            .map(|t| t.lower.as_str())
     }
 
     /// A single date at `i`: returns (date, tokens used).
@@ -432,7 +486,10 @@ impl Parser<'_, '_> {
                 return Some((next_weekday(today, wd) + Duration::days(7), 2));
             }
             return match n {
-                "week" => Some((week_start_of(today, self.ctx.week_start) + Duration::days(7), 2)),
+                "week" => Some((
+                    week_start_of(today, self.ctx.week_start) + Duration::days(7),
+                    2,
+                )),
                 "month" => Some((add_months(today.with_day(1)?, 1), 2)),
                 "year" => Some((NaiveDate::from_ymd_opt(today.year() + 1, 1, 1)?, 2)),
                 _ => None,
@@ -451,7 +508,10 @@ impl Parser<'_, '_> {
             return Some((d, 3));
         }
         if let Some(rest) = w.strip_prefix('+') {
-            let (num, unit) = rest.split_at(rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len()));
+            let (num, unit) = rest.split_at(
+                rest.find(|c: char| !c.is_ascii_digit())
+                    .unwrap_or(rest.len()),
+            );
             let n: i64 = num.parse().ok()?;
             let d = match unit {
                 "" | "d" => today + Duration::days(n),
@@ -475,13 +535,13 @@ impl Parser<'_, '_> {
             return Some((forward_md(today, m, day)?, 2));
         }
         // 20 oct [2027]
-        if let Some(day) = day_number(w) {
-            if let Some(m) = self.lower(i + 1).and_then(month) {
-                if let Some(y) = self.lower(i + 2).and_then(year) {
-                    return Some((NaiveDate::from_ymd_opt(y, m, day)?, 3));
-                }
-                return Some((forward_md(today, m, day)?, 2));
+        if let Some(day) = day_number(w)
+            && let Some(m) = self.lower(i + 1).and_then(month)
+        {
+            if let Some(y) = self.lower(i + 2).and_then(year) {
+                return Some((NaiveDate::from_ymd_opt(y, m, day)?, 3));
             }
+            return Some((forward_md(today, m, day)?, 2));
         }
         // 20/10, 20/10/2026, 10/20 (mdy)
         if w.contains('/') {
@@ -514,22 +574,25 @@ impl Parser<'_, '_> {
             let (a, b) = s.split_once(['-', '–'])?;
             Some((day_number(a)?, day_number(b)?))
         };
-        if let Some(m) = month(w) {
-            if let Some((a, b)) = self.lower(i + 1).and_then(range_days) {
-                let first = forward_md(today, m, a)?;
-                let last = NaiveDate::from_ymd_opt(first.year(), m, b)?;
-                return Some((first, last, 2));
-            }
+        if let Some(m) = month(w)
+            && let Some((a, b)) = self.lower(i + 1).and_then(range_days)
+        {
+            let first = forward_md(today, m, a)?;
+            let last = NaiveDate::from_ymd_opt(first.year(), m, b)?;
+            return Some((first, last, 2));
         }
-        if let Some((a, b)) = range_days(w) {
-            if let Some(m) = self.lower(i + 1).and_then(month) {
-                let first = forward_md(today, m, a)?;
-                let last = NaiveDate::from_ymd_opt(first.year(), m, b)?;
-                return Some((first, last, 2));
-            }
+        if let Some((a, b)) = range_days(w)
+            && let Some(m) = self.lower(i + 1).and_then(month)
+        {
+            let first = forward_md(today, m, a)?;
+            let last = NaiveDate::from_ymd_opt(first.year(), m, b)?;
+            return Some((first, last, 2));
         }
         let (first, n) = self.date_at(i)?;
-        if matches!(self.lower(i + n), Some("to" | "until" | "-" | "–" | "through" | "thru")) {
+        if matches!(
+            self.lower(i + n),
+            Some("to" | "until" | "-" | "–" | "through" | "thru")
+        ) {
             let (mut last, m) = self.date_at(i + n + 1)?;
             if last < first && self.lower(i + n + 1).and_then(month).is_some() {
                 last = NaiveDate::from_ymd_opt(last.year() + 1, last.month(), last.day())?;
@@ -546,7 +609,11 @@ impl Parser<'_, '_> {
         }
         let mut j = i + 1;
         let mut interval = 1u32;
-        if let Some(n) = self.lower(j).and_then(|w| w.parse::<u32>().ok()).filter(|n| *n >= 1) {
+        if let Some(n) = self
+            .lower(j)
+            .and_then(|w| w.parse::<u32>().ok())
+            .filter(|n| *n >= 1)
+        {
             interval = n;
             j += 1;
         } else if self.lower(j) == Some("other") {
@@ -555,7 +622,11 @@ impl Parser<'_, '_> {
         }
         let word = self.lower(j)?;
         let with_interval = |freq: &str| {
-            if interval == 1 { format!("FREQ={freq}") } else { format!("FREQ={freq};INTERVAL={interval}") }
+            if interval == 1 {
+                format!("FREQ={freq}")
+            } else {
+                format!("FREQ={freq};INTERVAL={interval}")
+            }
         };
         let unit = word.trim_end_matches('s');
         let rule = match unit {
@@ -586,23 +657,18 @@ impl Parser<'_, '_> {
                 }
                 let mut days = Vec::new();
                 let mut k = j;
-                loop {
-                    let Some(w) = self.lower(k) else { break };
+                while let Some(w) = self.lower(k) {
                     let mut any = false;
                     for part in w.split(',').filter(|p| !p.is_empty()) {
-                        match weekday(part) {
-                            Some(d) => {
-                                days.push(d);
-                                any = true;
-                            }
-                            None => return None,
-                        }
+                        days.push(weekday(part)?);
+                        any = true;
                     }
                     if !any {
                         break;
                     }
                     k += 1;
-                    if self.lower(k) == Some("and") && self.lower(k + 1).and_then(weekday).is_some() {
+                    if self.lower(k) == Some("and") && self.lower(k + 1).and_then(weekday).is_some()
+                    {
                         k += 1;
                     } else if !w.ends_with(',') {
                         break;
@@ -612,7 +678,10 @@ impl Parser<'_, '_> {
                     return None;
                 }
                 let codes: Vec<&str> = days.iter().map(|d| ical_day(*d)).collect();
-                return Some((Repeat::Rule(format!("FREQ=WEEKLY;BYDAY={}", codes.join(","))), k - i));
+                return Some((
+                    Repeat::Rule(format!("FREQ=WEEKLY;BYDAY={}", codes.join(","))),
+                    k - i,
+                ));
             }
         };
         Some((Repeat::Rule(rule), j + 1 - i))
@@ -620,27 +689,45 @@ impl Parser<'_, '_> {
 
     fn pick_list(&self, name: &str) -> ListPick {
         if let Some(id) = name.strip_suffix('!') {
-            if let Some(l) = self.ctx.lists.iter().find(|l| l.id.eq_ignore_ascii_case(id)) {
+            if let Some(l) = self
+                .ctx
+                .lists
+                .iter()
+                .find(|l| l.id.eq_ignore_ascii_case(id))
+            {
                 return ListPick::Existing(l.id.clone());
             }
             return ListPick::Create(id.to_string());
         }
         let n = name.to_lowercase();
         let lists = self.ctx.lists;
-        if let Some(l) = lists.iter().find(|l| l.id.to_lowercase() == n || l.name.to_lowercase() == n) {
+        if let Some(l) = lists
+            .iter()
+            .find(|l| l.id.to_lowercase() == n || l.name.to_lowercase() == n)
+        {
             return ListPick::Existing(l.id.clone());
         }
-        let prefix: Vec<&List> =
-            lists.iter().filter(|l| l.id.to_lowercase().starts_with(&n) || l.name.to_lowercase().starts_with(&n)).collect();
+        let prefix: Vec<&List> = lists
+            .iter()
+            .filter(|l| {
+                l.id.to_lowercase().starts_with(&n) || l.name.to_lowercase().starts_with(&n)
+            })
+            .collect();
         let pool: Vec<&List> = if prefix.is_empty() {
-            lists.iter().filter(|l| subsequence(&n, &l.id.to_lowercase())).collect()
+            lists
+                .iter()
+                .filter(|l| subsequence(&n, &l.id.to_lowercase()))
+                .collect()
         } else {
             prefix
         };
         match pool.as_slice() {
             [one] => ListPick::Existing(one.id.clone()),
             [] => ListPick::Unknown(name.to_string()),
-            many => ListPick::Ambiguous(name.to_string(), many.iter().map(|l| l.id.clone()).collect()),
+            many => ListPick::Ambiguous(
+                name.to_string(),
+                many.iter().map(|l| l.id.clone()).collect(),
+            ),
         }
     }
 
@@ -652,26 +739,28 @@ impl Parser<'_, '_> {
 
     /// Tries every token form at `i`; returns how many tokens it used.
     fn step(&mut self, i: usize) -> usize {
-        let Some(w) = self.lower(i).map(str::to_string) else { return 0 };
+        let Some(w) = self.lower(i).map(str::to_string) else {
+            return 0;
+        };
         if let Some((r, n)) = self.repeat_at(i) {
             self.d.repeat = Some(r);
             self.mark(i, n, Role::Repeat);
             return n;
         }
-        if w == "remind" || w == "reminder" {
-            if let Some(len) = self.lower(i + 1).and_then(parse_length) {
-                self.d.remind = Some(len);
-                self.mark(i, 2, Role::Remind);
-                return 2;
-            }
+        if (w == "remind" || w == "reminder")
+            && let Some(len) = self.lower(i + 1).and_then(parse_length)
+        {
+            self.d.remind = Some(len);
+            self.mark(i, 2, Role::Remind);
+            return 2;
         }
-        if w == "for" {
-            if let Some(len) = self.lower(i + 1).and_then(parse_length) {
-                self.d.length = Some(len);
-                self.mark(i, 2, Role::Time);
-                self.lengths.push(i..i + 2);
-                return 2;
-            }
+        if w == "for"
+            && let Some(len) = self.lower(i + 1).and_then(parse_length)
+        {
+            self.d.length = Some(len);
+            self.mark(i, 2, Role::Time);
+            self.lengths.push(i..i + 2);
+            return 2;
         }
         if matches!(w.as_str(), "on" | "at" | "by" | "due" | "from") {
             let save = (self.d.clone(), self.used.clone(), self.lengths.clone());
@@ -687,7 +776,9 @@ impl Parser<'_, '_> {
     }
 
     fn step_core(&mut self, i: usize) -> usize {
-        let Some(w) = self.lower(i).map(str::to_string) else { return 0 };
+        let Some(w) = self.lower(i).map(str::to_string) else {
+            return 0;
+        };
         if let Some((a, b, n)) = self.span_at(i) {
             self.d.date = Some(a);
             self.d.end_date = Some(b);
@@ -707,13 +798,13 @@ impl Parser<'_, '_> {
         }
         if let Some((t, _)) = time_of(&w) {
             // 3pm - 4pm / 3pm to 4pm
-            if matches!(self.lower(i + 1), Some("-" | "–" | "to" | "until")) {
-                if let Some((e, _)) = self.lower(i + 2).and_then(time_of) {
-                    self.d.time = Some(t);
-                    self.d.end_time = Some(e);
-                    self.mark(i, 3, Role::Time);
-                    return 3;
-                }
+            if matches!(self.lower(i + 1), Some("-" | "–" | "to" | "until"))
+                && let Some((e, _)) = self.lower(i + 2).and_then(time_of)
+            {
+                self.d.time = Some(t);
+                self.d.end_time = Some(e);
+                self.mark(i, 3, Role::Time);
+                return 3;
             }
             self.d.time = Some(t);
             self.mark(i, 1, Role::Time);
@@ -730,9 +821,17 @@ impl Parser<'_, '_> {
             self.mark(i, 1, Role::Flag);
             return 1;
         }
-        if let Some(name) = w.strip_prefix('#').filter(|n| n.len() > 1 || (!n.is_empty() && *n != "!")) {
+        // `@work` works too: shells treat `#` at a word's start as a comment.
+        if let Some(name) = w
+            .strip_prefix(['#', '@'])
+            .filter(|n| n.len() > 1 || (!n.is_empty() && *n != "!"))
+        {
             let original = &self.toks[i].text[1..];
-            let pick = self.pick_list(if original.to_lowercase() == name { original } else { name });
+            let pick = self.pick_list(if original.to_lowercase() == name {
+                original
+            } else {
+                name
+            });
             let ok = matches!(pick, ListPick::Existing(_) | ListPick::Create(_));
             self.d.list = Some(pick);
             self.mark(i, 1, if ok { Role::List } else { Role::Error });
@@ -768,7 +867,13 @@ pub fn subsequence(needle: &str, hay: &str) -> bool {
 pub fn parse(input: &str, ctx: &Ctx) -> Draft {
     let toks = tokenize(input);
     let n = toks.len();
-    let mut p = Parser { ctx, used: vec![None; n], toks, d: Draft::default(), lengths: Vec::new() };
+    let mut p = Parser {
+        ctx,
+        used: vec![None; n],
+        toks,
+        d: Draft::default(),
+        lengths: Vec::new(),
+    };
     let mut i = 0;
     while i < n {
         if p.toks[i].quoted {
@@ -789,11 +894,11 @@ pub fn parse(input: &str, ctx: &Ctx) -> Draft {
     }
     let today = ctx.today();
     // A repeat without a date starts at its first occurrence.
-    if p.d.date.is_none() {
-        if let Some(Repeat::Rule(rule)) = &p.d.repeat {
-            p.d.date = first_from_rule(rule, today);
-            p.d.implied_date = p.d.date.is_some();
-        }
+    if p.d.date.is_none()
+        && let Some(Repeat::Rule(rule)) = &p.d.repeat
+    {
+        p.d.date = first_from_rule(rule, today);
+        p.d.implied_date = p.d.date.is_some();
     }
     if p.d.time.is_some() && p.d.date.is_none() {
         p.d.date = Some(today);
@@ -811,10 +916,15 @@ pub fn parse(input: &str, ctx: &Ctx) -> Draft {
     for (t, u) in p.toks.iter().zip(&p.used) {
         if let Some(role) = u {
             match spans.last_mut() {
-                Some(s) if s.role == *role && input[s.range.end..t.range.start].trim().is_empty() => {
+                Some(s)
+                    if s.role == *role && input[s.range.end..t.range.start].trim().is_empty() =>
+                {
                     s.range.end = t.range.end;
                 }
-                _ => spans.push(Span { range: t.range.clone(), role: *role }),
+                _ => spans.push(Span {
+                    range: t.range.clone(),
+                    role: *role,
+                }),
             }
         }
     }
@@ -828,13 +938,17 @@ fn first_from_rule(rule: &str, today: NaiveDate) -> Option<NaiveDate> {
             .map(|k| today + Duration::days(k))
             .find(|d| days.split(',').any(|c| c == ical_day(d.weekday())));
     }
-    if let Some(day) = rule.split(';').find_map(|p| p.strip_prefix("BYMONTHDAY=")).and_then(|d| d.parse::<u32>().ok()) {
+    if let Some(day) = rule
+        .split(';')
+        .find_map(|p| p.strip_prefix("BYMONTHDAY="))
+        .and_then(|d| d.parse::<u32>().ok())
+    {
         for k in 0..13 {
             let base = add_months(today.with_day(1)?, k);
-            if let Some(d) = NaiveDate::from_ymd_opt(base.year(), base.month(), day) {
-                if d >= today {
-                    return Some(d);
-                }
+            if let Some(d) = NaiveDate::from_ymd_opt(base.year(), base.month(), day)
+                && d >= today
+            {
+                return Some(d);
             }
         }
     }
@@ -878,14 +992,20 @@ mod tests {
     fn lists() -> Vec<List> {
         ["personal", "work", "health", "home"]
             .iter()
-            .map(|n| List { id: n.to_string(), name: n.to_string(), color: None })
+            .map(|n| List {
+                id: n.to_string(),
+                name: n.to_string(),
+                color: None,
+            })
             .collect()
     }
 
     /// Wednesday 15 October 2026, noon.
     fn ctx(l: &[List]) -> Ctx<'_> {
         Ctx {
-            now: Tz::Europe__London.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap(),
+            now: Tz::Europe__London
+                .with_ymd_and_hms(2026, 10, 15, 12, 0, 0)
+                .unwrap(),
             date_order: DateOrder::Dmy,
             week_start: Weekday::Mon,
             lists: l,
@@ -1036,7 +1156,15 @@ mod tests {
     #[test]
     fn lists_priority_quotes() {
         assert_eq!(p("x #wo").list, Some(ListPick::Existing("work".into())));
-        assert_eq!(p("x #h").list, Some(ListPick::Ambiguous("h".into(), vec!["health".into(), "home".into()])));
+        assert_eq!(p("x @work").list, Some(ListPick::Existing("work".into())));
+        assert_eq!(p("meet @ noon").title, "meet @");
+        assert_eq!(
+            p("x #h").list,
+            Some(ListPick::Ambiguous(
+                "h".into(),
+                vec!["health".into(), "home".into()]
+            ))
+        );
         assert_eq!(p("x #gym!").list, Some(ListPick::Create("gym".into())));
         assert_eq!(p("x #nope").list, Some(ListPick::Unknown("nope".into())));
         assert!(p("x #nope").problem().is_some());
@@ -1082,23 +1210,48 @@ mod tests {
     fn spans_cover_tokens() {
         let s = "pay rent fri 3pm #work !";
         let x = p(s);
-        let roles: Vec<(&str, Role)> = x.spans.iter().map(|sp| (&s[sp.range.clone()], sp.role)).collect();
-        assert_eq!(roles, vec![("fri", Role::Date), ("3pm", Role::Time), ("#work", Role::List), ("!", Role::Priority)]);
+        let roles: Vec<(&str, Role)> = x
+            .spans
+            .iter()
+            .map(|sp| (&s[sp.range.clone()], sp.role))
+            .collect();
+        assert_eq!(
+            roles,
+            vec![
+                ("fri", Role::Date),
+                ("3pm", Role::Time),
+                ("#work", Role::List),
+                ("!", Role::Priority)
+            ]
+        );
     }
 
     #[test]
     fn preview_text() {
         let x = p("pay rent fri 3pm #work !");
-        assert_eq!(x.preview(x.kind(), TimeFormat::H24, None), "task · due Fri 16 Oct 15:00 · #work · !");
+        assert_eq!(
+            x.preview(x.kind(), TimeFormat::H24, None),
+            "task · due Fri 16 Oct 15:00 · #work · !"
+        );
         let e = p("dentist sat 2-3pm");
-        assert_eq!(e.preview(e.kind(), TimeFormat::H12, Some("personal")), "event · Sat 17 Oct 2pm–3pm · #personal");
+        assert_eq!(
+            e.preview(e.kind(), TimeFormat::H12, Some("personal")),
+            "event · Sat 17 Oct 2pm–3pm · #personal"
+        );
     }
 
     #[test]
     fn grammar_dates_read_back() {
         let l = lists();
         let c = ctx(&l);
-        for day in [d(10, 15), d(10, 16), d(10, 20), d(12, 31), d(10, 1), d(3, 3)] {
+        for day in [
+            d(10, 15),
+            d(10, 16),
+            d(10, 20),
+            d(12, 31),
+            d(10, 1),
+            d(3, 3),
+        ] {
             let text = grammar_date(day, c.today());
             assert_eq!(parse(&format!("x {text}"), &c).date, Some(day), "{text}");
         }
