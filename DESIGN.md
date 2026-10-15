@@ -241,6 +241,8 @@ come from the config.
 
 ```
 ct                              open the TUI
+ctui --view today|month|tasks   open the TUI on that page (piped: print it)
+ctui init bash|zsh|fish         print the shortcuts (ct, ctt, ctm, cttasks) for an rc file
 ct add <text>                   add (task or event, by the grammar)
 ct ls [today|week|overdue|all|#list|<query>]     list tasks (default: open, due ≤ today + undated)
 ct today [days]                 Today: overdue, today and the next days (aliases: ag, agenda)
@@ -268,6 +270,38 @@ ct remind                       print/notify reminders due now (§8); for a time
   `added task 4 · due Fri 17 Oct · #work`, `done 4 · pay rent (next: 15 Nov)`.
 - Shell completions (`ct completions bash|zsh|fish`) from clap, including list
   names.
+
+### 6.1 Shortcuts
+
+**Decision (owner, 2026-10-16): built-in shortcuts, three letters unless
+taken.** `eval "$(ctui init zsh)"` (bash the same, fish:
+`ctui init fish | source`) defines `ct` → `ctui` and one alias per page,
+each `ctui --view <page>`:
+
+- A page's name is `ct` + its first letter, or `ct` + the whole name if
+  that's taken: Today `ctt`, Month `ctm`, Tasks `cttasks` (Today has `ctt`).
+- Taken means an earlier page claimed it (worked out in Rust,
+  `shortcuts::candidates()`, the one place the rule lives; the snippets for
+  all three shells are generated from it), or the shell already has a
+  command, function or alias of that name. That second check runs in the
+  snippet when the shell starts (`alias` / `command -v`, fish `functions -q`
+  / `type -q`), not when `ctui init` ran, so installing something later
+  wins. An alias with exactly our body counts as ours, so re-sourcing the rc
+  file (or an existing `alias ct=ctui`) is fine.
+- `ct` has no fallback: if a different `ct` exists (Arch's `extra/ct`
+  installs `/usr/bin/ct`), the snippet leaves it alone and you keep `ctui`.
+  The page names still work, since they call `ctui` directly.
+- Words after a shortcut are a normal command (`ctm add milk` = `ct add
+  milk`): `--view` is ignored when a command is given. Keeping them plain
+  aliases means no wrapper logic and completion works through the alias.
+- `views` is only checked at run time: a hidden page opened with `--view`
+  falls back to the first page that's on, with a toast, like `1` `2` `3`.
+- Piped, `--view` prints the page's CLI equivalent (`ct today`, `ct cal`,
+  `ct ls`), so the shortcuts are useful in scripts and `watch` too.
+- In the TUI, `:ctt`, `:ctm`, `:cttasks`, `:cttoday` and `:ctmonth` switch
+  pages, and complete.
+- `ctui init` prints without loading the config or the store, because it
+  runs at every shell start.
 
 ---
 
@@ -456,7 +490,7 @@ second consumer ever appears.
 
 ```
 src/
-  main.rs          clap: no args → tui::run (or the agenda when piped), else cli::run
+  main.rs          clap: no command → tui::run (or the page as text when piped), else cli::run
   core/            UI-free. The only place that changes data.
     ical.rs        a small RFC 5545 reader/writer that keeps every property
     time.rs        Moment (date / floating / zoned), durations, DST-safe math
@@ -471,6 +505,7 @@ src/
     remind.rs      alarms due in a window, last-run state
   cli.rs           subcommands → core::ops; text and --json output
   session.rs       paths + config + store + journal + theme, shared by both
+  shortcuts.rs     `ctui init`: the page shortcut rule and the bash/zsh/fish snippets
   theme.rs         themes, colours, list palette slots
   config.rs        Config, Paths, :set
   tui/
@@ -574,5 +609,6 @@ list.
      as a second built-in source. `cargo install` users copy them by hand.
      That's how ttyp avoids the issue too (its catalogue).
 2. Should `ct` itself be installed as a binary name? The plan says no: Arch's
-   `extra/ct` (Flatcar config transpiler) also installs `/usr/bin/ct`, so the
-   README suggests `alias ct=ctui` instead.
+   `extra/ct` (Flatcar config transpiler) also installs `/usr/bin/ct`, so
+   `ctui init` defines `ct` as an alias, and only when no other `ct` exists
+   (§6.1).

@@ -35,6 +35,10 @@ pub struct Cli {
     /// Where undo, trash and reminder state live.
     #[arg(long, global = true, value_name = "DIR")]
     pub state_dir: Option<PathBuf>,
+    /// Open the TUI on this page: today, month or tasks (piped: print it).
+    /// Ignored when a command is given, so `ctm add milk` just adds.
+    #[arg(long, value_name = "PAGE", value_parser = config::View::parse)]
+    pub view: Option<config::View>,
     #[command(subcommand)]
     pub cmd: Option<Cmd>,
 }
@@ -141,6 +145,8 @@ pub enum Cmd {
     },
     /// Print shell completions: ct completions zsh
     Completions { shell: clap_complete::Shell },
+    /// Print shortcuts (ct, ctt, ctm, cttasks) for your rc file: eval "$(ctui init zsh)"
+    Init { shell: crate::shortcuts::Shell },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -916,6 +922,9 @@ pub fn run(s: &mut Session, cmd: Cmd, out: &mut Out, interactive: bool) -> Resul
         },
         Cmd::Completions { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "ctui", out.w);
+        }
+        Cmd::Init { shell } => {
+            write!(out.w, "{}", crate::shortcuts::init(shell))?;
         }
     }
     Ok(())

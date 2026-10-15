@@ -42,7 +42,8 @@ fn leave(term: &mut Term, mouse: bool) {
     let _ = term.show_cursor();
 }
 
-pub fn run(session: Session) -> Result<()> {
+/// Runs the TUI, opening on `start` (`ctui --view`) instead of the default page.
+pub fn run(session: Session, start: Option<crate::config::View>) -> Result<()> {
     let mouse = session.cfg.mouse;
     // Put the terminal back even if something panics.
     let hook = std::panic::take_hook();
@@ -53,6 +54,9 @@ pub fn run(session: Session) -> Result<()> {
     }));
     let mut term = enter(mouse)?;
     let mut app = App::new(session);
+    if let Some(v) = start {
+        app.start_on(v);
+    }
     let result = event_loop(&mut term, &mut app, mouse);
     leave(&mut term, mouse);
     result

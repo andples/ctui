@@ -149,3 +149,134 @@ fn remind_finds_due_alarms() {
     // First run looks back a minute: 11:30 is long gone.
     assert!(out.is_empty(), "{out}");
 }
+
+#[test]
+fn view_flag_prints_that_page_when_piped() {
+    let s = Sandbox::new("view");
+    s.ok(&["add", "standup today 9:00-9:15"]);
+    s.ok(&["add", "buy milk"]);
+    assert!(s.ok(&["--view", "agenda"]).contains("standup"));
+    assert!(s.ok(&["--view", "month"]).contains("October 2026"));
+    let tasks = s.ok(&["--view", "tasks"]);
+    assert!(
+        tasks.contains("buy milk") && !tasks.contains("standup"),
+        "{tasks}"
+    );
+    // A command wins over --view, so `ctm add milk` just adds.
+    assert!(
+        s.ok(&["--view", "month", "add", "oat milk"])
+            .starts_with("added")
+    );
+    assert_eq!(s.run(&["--view", "week"]).status.code(), Some(2));
+}
+
+#[test]
+fn init_prints_shortcuts_for_each_shell() {
+    let s = Sandbox::new("init");
+    for shell in ["bash", "zsh", "fish"] {
+        let out = s.ok(&["init", shell]);
+        for want in [
+            "_ctui_alias ct ctui",
+            "ctt 'ctui --view today'",
+            "cttoday 'ctui --view today'",
+            "ctm 'ctui --view month'",
+            "ctmonth 'ctui --view month'",
+            "cttasks 'ctui --view tasks'",
+        ] {
+            assert!(out.contains(want), "{shell}: {want}\n{out}");
+        }
+    }
+    assert_eq!(s.run(&["init", "tcsh"]).status.code(), Some(2));
+}
+
+/// bash by full path (the tests empty PATH).
+fn bash() -> Option<&'static str> {
+    ["/usr/bin/bash", "/bin/bash"]
+        .into_iter()
+        .find(|p| std::path::Path::new(p).exists())
+}
+
+/// Sources the bash snippet twice in a clean bash (nothing on PATH but the
+/// sandbox's `bin`) after `setup`, and returns the aliases it ends up with.
+/// None when there's no bash.
+fn bash_aliases(s: &Sandbox, setup: &str) -> Option<String> {
+    let bash = bash()?;
+    let snippet = s.0.join("init.bash");
+    std::fs::write(&snippet, s.ok(&["init", "bash"])).unwrap();
+    let bin = s.0.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let script = format!(
+        "{setup}\n. '{0}'\nfirst=$(alias)\n. '{0}'\n[ \"$first\" = \"$(alias)\" ] || echo UNSTABLE\nalias",
+        snippet.display()
+    );
+    let o = Command::new(bash)
+        .args(["--norc", "--noprofile", "-c", &script])
+        .env_clear()
+        .env("PATH", &bin)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    Some(String::from_utf8(o.stdout).unwrap())
+}
+
+#[test]
+fn bash_snippet_falls_back_when_a_name_is_taken() {
+    let s = Sandbox::new("bash");
+    let Some(plain) = bash_aliases(&s, "") else {
+        return;
+    };
+    assert_eq!(
+        plain,
+        "alias ct='ctui'\nalias ctm='ctui --view month'\nalias ctt='ctui --view today'\nalias cttasks='ctui --view tasks'\n"
+    );
+    // Someone else's ctm (a function) and ctt (an alias) win; ours move aside.
+    let taken = bash_aliases(&s, "ctm() { :; }\nalias ctt='echo mine'").unwrap();
+    assert!(!taken.contains("UNSTABLE"), "{taken}");
+    assert!(
+        taken.contains("alias ctmonth='ctui --view month'"),
+        "{taken}"
+    );
+    assert!(
+        taken.contains("alias cttoday='ctui --view today'"),
+        "{taken}"
+    );
+    assert!(taken.contains("alias ctt='echo mine'"), "{taken}");
+    assert!(!taken.contains("alias ctm="), "{taken}");
+    // A different `ct` on PATH (Arch's extra/ct) is left alone.
+    let ct = s.0.join("bin/ct");
+    std::fs::write(&ct, "#!/bin/sh\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&ct, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let other = bash_aliases(&s, "").unwrap();
+    assert!(!other.contains("alias ct="), "{other}");
+    assert!(other.contains("alias ctt='ctui --view today'"), "{other}");
+    // The aliases run ctui on their page, passing words through.
+    std::fs::write(s.0.join("bin/ctui"), "#!/bin/sh\necho \"ctui $*\"\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(s.0.join("bin/ctui"), std::fs::Permissions::from_mode(0o755))
+            .unwrap();
+    }
+    let o = Command::new(bash().unwrap())
+        .args([
+            "--norc",
+            "--noprofile",
+            "-c",
+            &format!(
+                "shopt -s expand_aliases\n. '{}'\ncttasks\nctm add milk",
+                s.0.join("init.bash").display()
+            ),
+        ])
+        .env_clear()
+        .env("PATH", s.0.join("bin"))
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&o.stdout),
+        "ctui --view tasks\nctui --view month add milk\n"
+    );
+}

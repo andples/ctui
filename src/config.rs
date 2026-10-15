@@ -28,6 +28,16 @@ impl View {
             View::Tasks => "tasks",
         }
     }
+
+    /// A page by name (`agenda` is the old name of `today`), for `--view`.
+    pub fn parse(s: &str) -> Result<View, String> {
+        match s.to_lowercase().as_str() {
+            "today" | "agenda" => Ok(View::Today),
+            "month" => Ok(View::Month),
+            "tasks" => Ok(View::Tasks),
+            _ => Err(format!("no page {s:?} (today, month or tasks)")),
+        }
+    }
 }
 
 /// How typed numeric dates like `20/10` are read.

@@ -176,6 +176,48 @@ fn command_line_runs_ct_commands() {
 }
 
 #[test]
+fn opens_on_a_page_and_shortcut_names_switch() {
+    let mut t = setup("start");
+    t.app.start_on(View::Month);
+    assert_eq!(t.app.view, View::Month);
+    assert_eq!(t.app.month_day, t.app.today(), "month opens on today");
+    let pane: Vec<_> = t.app.day_rows.iter().map(|e| e.day).collect();
+    assert!(
+        !pane.is_empty() && pane.iter().all(|d| *d == t.app.today()),
+        "{pane:?}"
+    );
+    for (word, want) in [
+        ("ctt", View::Today),
+        ("cttasks", View::Tasks),
+        ("ctm", View::Month),
+        ("cttoday", View::Today),
+        ("ctmonth", View::Month),
+        ("agenda", View::Today),
+    ] {
+        t.app.command(word);
+        assert_eq!(t.app.view, want, ":{word}");
+    }
+    let names = super::app::command_names();
+    for n in ["ctt", "cttoday", "ctm", "ctmonth", "cttasks"] {
+        assert!(names.iter().any(|c| c == n), "completes {n}");
+    }
+    assert!(!names.iter().any(|c| c == "init"));
+    // A page turned off in the config stays off, with a toast.
+    t.app.command("ctt");
+    t.app.s.cfg.views = vec![View::Today, View::Tasks];
+    t.app.start_on(View::Month);
+    assert_eq!(t.app.view, View::Today);
+    assert!(
+        t.app
+            .toast
+            .as_ref()
+            .is_some_and(|(m, _)| m.contains("turned off")),
+        "{:?}",
+        t.app.toast
+    );
+}
+
+#[test]
 fn mouse_ticks_and_switches() {
     let mut t = setup("mouse");
     t.app.view = View::Tasks;

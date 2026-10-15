@@ -468,6 +468,18 @@ impl App {
         self.rebuild();
     }
 
+    /// Opens on `v` instead of the default page (`ctui --view`). A page
+    /// turned off in `views` stays off, with a toast, as with `1` `2` `3`.
+    pub fn start_on(&mut self, v: View) {
+        let today = self.month_day;
+        self.switch(v);
+        // Month opens on today, not on the first Today row's day.
+        if self.month_day != today {
+            self.month_day = today;
+            self.rebuild();
+        }
+    }
+
     fn switch(&mut self, v: View) {
         if !self.s.cfg.views().contains(&v) {
             self.toast(format!(
@@ -1282,12 +1294,13 @@ impl App {
                 self.open_themes();
                 return;
             }
-            Some(v @ ("today" | "agenda" | "month" | "tasks")) if words.len() == 1 => {
-                self.switch(match v {
-                    "today" | "agenda" => View::Today,
-                    "month" => View::Month,
-                    _ => View::Tasks,
-                });
+            // Page names, and the shell shortcut names (`:ctm`, `:cttasks`).
+            Some(w)
+                if words.len() == 1
+                    && let Some(v) =
+                        View::parse(w).ok().or_else(|| crate::shortcuts::page_of(w)) =>
+            {
+                self.switch(v);
                 return;
             }
             _ => {}
@@ -1488,9 +1501,14 @@ pub fn command_names() -> Vec<String> {
             std::iter::once(c.get_name().to_string())
                 .chain(c.get_visible_aliases().map(str::to_string))
         })
-        .filter(|n| n != "completions")
+        .filter(|n| n != "completions" && n != "init")
         .collect();
     v.extend(["quit", "help", "month", "tasks"].map(String::from));
+    v.extend(
+        crate::shortcuts::candidates()
+            .into_iter()
+            .flat_map(|(_, n)| n),
+    );
     v.sort();
     v.dedup();
     v

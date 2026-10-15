@@ -25,3 +25,7 @@ Adding a key: an `Action` variant, a `TABLE` row in `src/tui/keys.rs` (help and 
 pick it up), a `dispatch` arm, and a `hints()` entry if it belongs on the bottom line.
 Adding a command: a `Cmd` variant in `src/cli.rs` and its `run` arm; the TUI's `:` line and
 completion get it for free.
+Shell shortcuts (`ctui init`, DESIGN.md §6.1): the page→name rule lives only in
+`shortcuts::candidates()`; the bash/zsh/fish snippets, `:ctm`-style page words and completion
+all come from it. Adding a page means no shortcut code changes. `tests/cli.rs` sources the bash
+snippet for real.

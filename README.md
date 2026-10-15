@@ -6,7 +6,7 @@ Your data stays on your machine as standard iCalendar files: no accounts,
 no server, no Google.
 
 ```sh
-alias ct=ctui
+eval "$(ctui init zsh)"             # ct, plus ctt / ctm / cttasks (see Shortcuts)
 
 ct add pay rent fri !               # a task, due Friday, priority !
 ct add dentist sat 2-3pm @health!   # an event (a time range makes it one), in a new list
@@ -26,8 +26,42 @@ cargo build --release               # target/release/ctui
 cargo install --path .              # into ~/.cargo/bin
 ```
 
-`ctui` is the binary. Use `alias ct=ctui` rather than installing a `ct`
-binary: Arch's `ct` package (the Flatcar config transpiler) uses that name.
+`ctui` is the binary. Get `ct` from the shortcuts below rather than
+installing a `ct` binary: Arch's `ct` package (the Flatcar config
+transpiler) uses that name.
+
+## Shortcuts
+
+One line in your shell's rc file gives you `ct` for `ctui` and a short name
+for each page of the TUI:
+
+```sh
+eval "$(ctui init bash)"            # ~/.bashrc
+eval "$(ctui init zsh)"             # ~/.zshrc
+ctui init fish | source             # ~/.config/fish/config.fish
+```
+
+| Name | Opens |
+|---|---|
+| `ct` | `ctui` (the TUI on your default page, or any command: `ct add milk`) |
+| `ctt` | the TUI on **Today** |
+| `ctm` | the TUI on **Month** |
+| `cttasks` | the TUI on **Tasks** (`ctt` is Today's) |
+
+The rule: a page gets `ct` + its first letter, unless that name is taken,
+then `ct` + the whole name. Taken means an earlier page has it (so Tasks is
+`cttasks`), or your shell already has a command, function or alias of that
+name, checked each time the shell starts: if you have a `ctm`, Month becomes
+`ctmonth`; if you have a `ctt`, Today becomes `cttoday`. If something else
+is already called `ct` (Arch's `ct` package), it's left alone and you keep
+typing `ctui`. Sourcing the rc file again is safe.
+
+Each name is just `ctui --view <page>`, so words after it are a normal
+command: `ctm add milk` adds milk, the same as `ct add milk`. Inside the TUI,
+`:ctm`, `:cttasks` and the rest switch pages too. Without a terminal
+(piped), `ctui --view today|month|tasks` prints that page as `ct today`,
+`ct cal` or `ct ls` would. A page turned off in `views` stays off: you get
+the first page that's on, with a note.
 
 ## The quick-add grammar
 
@@ -239,8 +273,9 @@ Every read command takes `--json` (`ct ls --json`, `ct today --json`,
 `ct cal --json`, `ct lists --json`). Exit codes: 0 ok, 1 error or no match,
 2 a reference matched several items. Output is plain when piped and respects
 `NO_COLOR`. `ctui` with no arguments and no terminal prints the Today list.
-`ct completions bash|zsh|fish` prints shell completions (for the alias in
-bash: `complete -o default -F _ctui ct`).
+`ct completions bash|zsh|fish` prints shell completions (zsh and fish
+complete the shortcuts through the alias; in bash add
+`complete -o default -F _ctui ct`).
 
 ## Credits
 

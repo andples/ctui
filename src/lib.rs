@@ -4,5 +4,6 @@ pub mod cli;
 pub mod config;
 pub mod core;
 pub mod session;
+pub mod shortcuts;
 pub mod theme;
 pub mod tui;
