@@ -280,3 +280,42 @@ fn bash_snippet_falls_back_when_a_name_is_taken() {
         "ctui --view tasks\nctui --view month add milk\n"
     );
 }
+
+#[test]
+fn search_finds_everything_and_numbers_it() {
+    let s = Sandbox::new("search");
+    s.ok(&["add", "buy milk"]);
+    s.ok(&["add", "milk run tomorrow 3pm"]);
+    s.ok(&["add", "milk tasting 2026-09-01 2-3pm @health!"]);
+    s.ok(&["add", "bread"]);
+    let out = s.ok(&["search", "milk"]);
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 3, "{out}");
+    // Best match first ("milk…" beats "…milk"), then upcoming before past.
+    assert!(
+        lines[0].contains("1  ☐ milk run") && lines[0].contains("tomorrow 15:00"),
+        "{out}"
+    );
+    assert!(
+        lines[1].contains("milk tasting") && lines[1].contains("Tue 1 Sep 14:00–15:00"),
+        "{out}"
+    );
+    assert!(lines[1].contains("#health"), "{out}");
+    assert!(
+        lines[2].contains("3  ☐ buy milk") && lines[2].contains("undated"),
+        "{out}"
+    );
+    // The numbers work like ct ls's; done items are still found.
+    assert_eq!(s.ok(&["done", "3"]).trim(), "done · buy milk");
+    assert!(s.ok(&["find", "buy", "milk"]).contains("☑ buy milk"));
+    let json: serde_json::Value =
+        serde_json::from_str(&s.ok(&["search", "milk", "--json"])).unwrap();
+    let v = json.as_array().unwrap();
+    assert_eq!(v.len(), 3);
+    assert!(
+        v.iter()
+            .any(|e| e["title"] == "buy milk" && e["day"].is_null() && e["done"] == true)
+    );
+    assert_eq!(s.run(&["search", "cheese"]).status.code(), Some(1));
+    assert_eq!(s.ok(&["search", "cheese", "--json"]).trim(), "[]");
+}

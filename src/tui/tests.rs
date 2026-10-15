@@ -295,3 +295,138 @@ fn subtasks_in_tasks_view() {
     key(&mut t.app, '<');
     assert!(t.app.s.store.get(&uid).unwrap().f.parent.is_none());
 }
+
+fn esc(app: &mut App) {
+    app.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+}
+
+fn search(app: &mut App, q: &str) {
+    key(app, '/');
+    typed(app, q);
+}
+
+#[test]
+fn search_shows_live_results_and_jumps_to_today() {
+    let mut t = setup("search-today");
+    key(&mut t.app, '3');
+    key(&mut t.app, '/');
+    let s = screen(&mut t.app, 100, 30);
+    assert!(s.contains("type to find any task or event"), "hint:\n{s}");
+    assert!(t.app.found.hits.is_empty(), "an empty query lists nothing");
+    typed(&mut t.app, "dent");
+    let s = screen(&mut t.app, 100, 30);
+    assert!(s.contains("Search everything"), "{s}");
+    assert!(
+        s.contains("dentist") && s.contains("Sat 14:00–15:00"),
+        "{s}"
+    );
+    assert!(s.contains("#health"), "{s}");
+    assert!(!s.contains("buy milk"), "only matches:\n{s}");
+    for (w, h) in [(40, 12), (60, 20), (20, 6)] {
+        screen(&mut t.app, w, h);
+    }
+    enter(&mut t.app);
+    assert!(matches!(t.app.mode, Mode::Normal));
+    assert_eq!(t.app.view, View::Today);
+    assert_eq!(
+        t.app.agenda_from.map(|d| d.to_string()).as_deref(),
+        Some("2026-10-17")
+    );
+    assert_eq!(t.app.selected().unwrap().title, "dentist");
+}
+
+#[test]
+fn search_jumps_to_undated_tasks_and_subtasks() {
+    let mut t = setup("search-tasks");
+    search(&mut t.app, "milk");
+    enter(&mut t.app);
+    assert_eq!(t.app.view, View::Tasks);
+    assert_eq!(t.app.tab, t.app.tabs().len() - 1, "the all tab");
+    assert_eq!(t.app.selected().unwrap().title, "buy milk");
+    // A subtask opens its parent.
+    let milk = t.app.selected().unwrap().uid.clone();
+    let trip = t
+        .app
+        .s
+        .store
+        .items
+        .iter()
+        .find(|i| i.f.title == "plan trip")
+        .unwrap()
+        .uid
+        .clone();
+    let (store, journal, env) = t.app.s.parts();
+    crate::core::ops::set_parent(store, journal, &env, &trip, Some(&milk)).unwrap();
+    t.app.expanded.clear();
+    key(&mut t.app, '1');
+    search(&mut t.app, "trip");
+    enter(&mut t.app);
+    assert_eq!(t.app.view, View::Tasks);
+    assert!(t.app.expanded.contains(&milk));
+    assert_eq!(t.app.selected().unwrap().title, "plan trip");
+}
+
+#[test]
+fn search_picks_the_occurrence_and_moves_with_arrows() {
+    let mut t = setup("search-recur");
+    search(&mut t.app, "a");
+    assert!(t.app.found.hits.len() > 2, "several results");
+    let ctrl = |c| KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL);
+    t.app.key(ctrl('n'));
+    t.app.key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(t.app.found.sel, 2);
+    t.app.key(ctrl('p'));
+    assert_eq!(t.app.found.sel, 1);
+    esc(&mut t.app);
+    // A repeating event jumps to its next occurrence, that exact one.
+    search(&mut t.app, "standup");
+    let hit = t.app.found.hits[0].clone();
+    assert!(hit.entry.rid.is_some());
+    enter(&mut t.app);
+    assert_eq!(t.app.view, View::Today);
+    let sel = t.app.selected().unwrap();
+    assert_eq!((&sel.uid, sel.rid), (&hit.entry.uid, hit.entry.rid));
+}
+
+#[test]
+fn search_esc_goes_back_and_hidden_pages_fall_back() {
+    let mut t = setup("search-esc");
+    key(&mut t.app, '2');
+    key(&mut t.app, 'l');
+    let day = t.app.month_day;
+    search(&mut t.app, "rent");
+    assert_eq!(t.app.found.hits.len(), 1);
+    esc(&mut t.app);
+    assert!(matches!(t.app.mode, Mode::Normal));
+    assert_eq!((t.app.view, t.app.month_day), (View::Month, day));
+    assert!(t.app.found.hits.is_empty());
+    // With Today turned off, a dated item opens in Month on its day.
+    t.app.s.cfg.views = vec![View::Month, View::Tasks];
+    search(&mut t.app, "rent");
+    enter(&mut t.app);
+    assert_eq!(t.app.view, View::Month);
+    assert_eq!(t.app.month_day.to_string(), "2026-10-16");
+    assert_eq!(t.app.selected().unwrap().title, "pay rent");
+}
+
+#[test]
+fn search_mouse_click_jumps() {
+    let mut t = setup("search-mouse");
+    search(&mut t.app, "pass");
+    screen(&mut t.app, 100, 30);
+    let rect = t
+        .app
+        .hits
+        .iter()
+        .find_map(|(r, h)| matches!(h, super::app::Hit::Result(0)).then_some(*r))
+        .unwrap();
+    t.app.mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column: rect.x + 10,
+        row: rect.y,
+        modifiers: KeyModifiers::NONE,
+    });
+    assert!(matches!(t.app.mode, Mode::Normal));
+    assert_eq!(t.app.view, View::Today);
+    assert_eq!(t.app.selected().unwrap().title, "renew passport");
+}

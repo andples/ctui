@@ -93,7 +93,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
         ..body
     };
     app.body_height = body.height as usize;
+    let searching = matches!(&app.mode, Mode::Input(i) if i.kind == InputKind::Search);
     match app.view {
+        _ if searching => draw_search(f, app, &p, body),
         View::Today | View::Tasks => draw_list(f, app, &p, body),
         View::Month => draw_month(f, app, &p, body),
     }
@@ -143,14 +145,9 @@ fn draw_top(f: &mut Frame, app: &mut App, p: &Pal, area: Rect) {
     if let Some(t) = Some(fmt_time(now.time(), app.s.cfg.time_format)) {
         right = format!("{right}  {t} ");
     }
-    let mut filter = String::new();
-    if !app.filter.is_empty() {
-        filter = format!("/{}  ", app.filter);
-    }
     let left_w: usize = spans.iter().map(|s| width(&s.content)).sum();
-    let gap = (area.width as usize).saturating_sub(left_w + width(&right) + width(&filter));
+    let gap = (area.width as usize).saturating_sub(left_w + width(&right));
     spans.push(Span::raw(" ".repeat(gap)));
-    spans.push(Span::styled(filter, Style::default().fg(p.main)));
     spans.push(Span::styled(right, Style::default().fg(p.sub)));
     f.render_widget(Paragraph::new(Line::from(spans)), area);
 }
@@ -199,6 +196,17 @@ fn time_width(app: &App) -> usize {
     }
 }
 
+/// Which list a line is in, for its time column (and the subtask arrow).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Cols {
+    /// Today page and the month's day pane: times of day.
+    Day,
+    /// Tasks page: due dates, and the subtask arrow.
+    Tasks,
+    /// Search results: date and time, or "undated".
+    Search,
+}
+
 /// One entry as a line; returns the line and the checkbox's x offset.
 #[allow(clippy::too_many_arguments)]
 fn entry_line(
@@ -210,8 +218,9 @@ fn entry_line(
     expanded: bool,
     w: usize,
     selected: bool,
-    in_tasks: bool,
+    cols: Cols,
 ) -> (Line<'static>, usize) {
+    let in_tasks = cols == Cols::Tasks;
     let list_color = color(app.s.list_color(&e.list));
     let mut spans: Vec<Span> = Vec::new();
     let marker = if selected { " › " } else { "   " };
@@ -246,13 +255,18 @@ fn entry_line(
     used += 2;
     let show_list = w >= 52;
     let show_time = w >= 36;
-    let tw = if in_tasks {
-        if w < 60 { 11 } else { 16 }
-    } else {
-        time_width(app)
+    let tw = match cols {
+        Cols::Tasks if w < 60 => 11,
+        Cols::Tasks => 16,
+        Cols::Search if w < 60 => 13,
+        Cols::Search => time_width(app) + 11,
+        Cols::Day => time_width(app),
     };
     if show_time {
-        let t = time_text(app, e, in_tasks);
+        let t = match cols {
+            Cols::Search => crate::cli::search_when(e, app.today(), app.s.cfg.time_format),
+            _ => time_text(app, e, in_tasks),
+        };
         let style = if e.now {
             Style::default().fg(p.main).add_modifier(Modifier::BOLD)
         } else if e.overdue {
@@ -366,7 +380,11 @@ fn draw_list(f: &mut Frame, app: &mut App, p: &Pal, area: Rect) {
                     *expanded,
                     w,
                     selected,
-                    app.view == View::Tasks,
+                    if app.view == View::Tasks {
+                        Cols::Tasks
+                    } else {
+                        Cols::Day
+                    },
                 );
                 lines.push((Some(i), line, cx));
             }
@@ -429,6 +447,86 @@ fn draw_list(f: &mut Frame, app: &mut App, p: &Pal, area: Rect) {
             ));
         }
     }
+}
+
+/// The `/` panel: every matching task and event, best first.
+fn draw_search(f: &mut Frame, app: &mut App, p: &Pal, area: Rect) {
+    let head = Style::default().fg(p.main).add_modifier(Modifier::BOLD);
+    let note = Style::default().fg(p.sub);
+    f.render_widget(
+        Paragraph::new(Line::from(Span::styled(" Search everything", head))),
+        Rect { height: 1, ..area },
+    );
+    let list = Rect {
+        y: area.y + 2,
+        height: area.height.saturating_sub(2),
+        ..area
+    };
+    let query_empty = matches!(&app.mode, Mode::Input(i) if i.text.trim().is_empty());
+    if app.found.hits.is_empty() {
+        let lines: Vec<Line> = if query_empty {
+            vec![
+                Line::from(Span::styled(
+                    "     type to find any task or event: past, future, undated or done",
+                    note,
+                )),
+                Line::from(Span::styled(
+                    "     every word must be in the title or the #list · enter jumps to it",
+                    note,
+                )),
+            ]
+        } else {
+            vec![Line::from(Span::styled(
+                "     nothing matches · fewer words, or check the spelling",
+                note,
+            ))]
+        };
+        f.render_widget(Paragraph::new(lines), list);
+        return;
+    }
+    let w = list.width as usize;
+    let h = list.height as usize;
+    let more = app.found.more;
+    // One extra line at the end for "+N more".
+    let total = app.found.hits.len() + usize::from(more > 0);
+    let sel = app.found.sel;
+    let margin = 2.min(h / 4);
+    let mut scroll = app.found.scroll;
+    if sel < scroll + margin {
+        scroll = sel.saturating_sub(margin);
+    } else if sel + margin >= scroll + h {
+        scroll = (sel + margin + 1).saturating_sub(h);
+    }
+    scroll = scroll.min(total.saturating_sub(h));
+    app.found.scroll = scroll;
+    let hits = std::mem::take(&mut app.found.hits);
+    for (k, i) in (scroll..total).take(h).enumerate() {
+        let r = Rect {
+            x: list.x,
+            y: list.y + k as u16,
+            width: list.width,
+            height: 1,
+        };
+        let Some(hit) = hits.get(i) else {
+            let msg = format!("     +{more} more · add words to narrow it");
+            f.render_widget(Paragraph::new(Line::from(Span::styled(msg, note))), r);
+            continue;
+        };
+        let (line, _) = entry_line(
+            app,
+            p,
+            &hit.entry,
+            0,
+            false,
+            false,
+            w,
+            i == sel,
+            Cols::Search,
+        );
+        f.render_widget(Paragraph::new(line), r);
+        app.hits.push((r, Hit::Result(i)));
+    }
+    app.found.hits = hits;
 }
 
 fn draw_tabs(f: &mut Frame, app: &mut App, p: &Pal, area: Rect) {
@@ -688,7 +786,8 @@ fn draw_day_pane(f: &mut Frame, app: &mut App, p: &Pal, area: Rect) {
     let h = list.height as usize;
     let skip = app.day_sel.saturating_sub(h.saturating_sub(1));
     for (k, (i, e)) in rows.iter().enumerate().skip(skip).take(h).enumerate() {
-        let (line, cx) = entry_line(app, p, e, 0, false, false, w, i == app.day_sel, false);
+        let selected = i == app.day_sel;
+        let (line, cx) = entry_line(app, p, e, 0, false, false, w, selected, Cols::Day);
         let r = Rect {
             x: list.x,
             y: list.y + k as u16,
@@ -717,7 +816,7 @@ fn draw_input(f: &mut Frame, app: &App, p: &Pal, area: Rect) {
         InputKind::Edit { .. } => ("edit ", true),
         InputKind::Move { .. } => ("move to ", true),
         InputKind::Goto => ("go to ", true),
-        InputKind::Filter => ("/", false),
+        InputKind::Search => ("/", false),
         InputKind::Command => (":", false),
     };
     let prompt = if label.len() > 1 {
@@ -857,15 +956,23 @@ fn preview(app: &App, inp: &super::app::Input, draft: Option<&parse::Draft>) -> 
             }
             None => ("not a date".into(), true),
         },
-        (InputKind::Filter, _) => {
-            let n = match app.view {
-                View::Month => app.day_rows.len(),
-                _ => app.rows.iter().filter(|r| r.entry().is_some()).count(),
-            };
-            (
-                format!("{n} shown · enter keeps the filter · esc clears it"),
-                false,
-            )
+        (InputKind::Search, _) => {
+            let f = &app.found;
+            let n = f.hits.len() + f.more;
+            if inp.text.trim().is_empty() {
+                (
+                    "words from a title or a #list · past, future, undated and done".into(),
+                    false,
+                )
+            } else if n == 0 {
+                ("nothing matches".into(), true)
+            } else {
+                let s = if n == 1 { "" } else { "es" };
+                (
+                    format!("{n} match{s} · enter jumps to it · esc goes back"),
+                    false,
+                )
+            }
         }
         (InputKind::Command, _) => {
             let first = inp.text.split_whitespace().next().unwrap_or("");
@@ -916,7 +1023,7 @@ fn hints(app: &App) -> Vec<(Action, &'static str)> {
     }
     v.extend([
         (Undo, "undo"),
-        (Filter, "filter"),
+        (Search, "search"),
         (Command, "cmd"),
         (Help, "help"),
         (Quit, "quit"),
@@ -941,6 +1048,14 @@ fn draw_foot(f: &mut Frame, app: &App, p: &Pal, area: Rect) {
         return;
     }
     if let Mode::Input(inp) = &app.mode {
+        if inp.kind == InputKind::Search {
+            let s = " ↑↓ ctrl+n/p pick  enter jump  esc back  tab #list  ctrl+w delete word";
+            f.render_widget(
+                Paragraph::new(Line::from(Span::styled(s, Style::default().fg(p.sub)))),
+                area,
+            );
+            return;
+        }
         let tab = if matches!(
             inp.kind,
             InputKind::Command | InputKind::Add { .. } | InputKind::Edit { .. }

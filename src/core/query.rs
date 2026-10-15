@@ -523,6 +523,166 @@ pub fn score(query: &str, title: &str) -> Option<i64> {
     super::parse::subsequence(&q, &t).then_some(10)
 }
 
+/// One search result: the item as a list entry (a repeating event's next
+/// occurrence, or its last if the series has ended) and how well it matched.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Hit {
+    /// `day` is where the item sits: an event's (occurrence) date, an open
+    /// task's due date, a done task's completion date. An undated task has
+    /// `due == None` and `day == today`.
+    pub entry: Entry,
+    pub score: i64,
+}
+
+impl Hit {
+    pub fn undated(&self) -> bool {
+        self.entry.kind == Kind::Task && self.entry.due.is_none()
+    }
+}
+
+/// How many results the TUI and `ct search` show before saying `+N more`.
+pub const SEARCH_LIMIT: usize = 200;
+
+/// Every task and event matching `query` (all words, in the title or
+/// `#list`), at any date, undated and done ones too. Best match first, then
+/// open before done, then upcoming (nearest first), undated, past (nearest
+/// first). An empty query finds nothing.
+pub fn search(store: &Store, query: &str, o: &Opts) -> Vec<Hit> {
+    let words: Vec<String> = query.split_whitespace().map(str::to_lowercase).collect();
+    if words.is_empty() {
+        return Vec::new();
+    }
+    let today = o.today();
+    let progress = progress_map(store);
+    let mut hits = Vec::new();
+    for item in &store.items {
+        if !matches(query, &item.f.title, &item.list) {
+            continue;
+        }
+        let entry = match item.kind {
+            Kind::Task => {
+                let due = item.f.due.map(|d| d.date(o.tz));
+                let day = if item.f.done {
+                    item.f
+                        .completed
+                        .map(|c| c.with_timezone(&o.tz).date_naive())
+                        .or(due)
+                } else {
+                    due
+                };
+                task_entry_with(item, day.unwrap_or(today), o, &progress)
+            }
+            Kind::Event => match nearest_occurrence(item, today, o.tz) {
+                Some(occ) => event_entry(item, &occ, o),
+                None => continue,
+            },
+        };
+        hits.push(Hit {
+            score: search_score(&words, &entry.title),
+            entry,
+        });
+    }
+    // Upcoming (0), undated (1), past (2); then distance from today.
+    let when = |h: &Hit| {
+        if h.undated() {
+            return (1, 0);
+        }
+        let d = (h.entry.day - today).num_days();
+        if d >= 0 { (0, d) } else { (2, -d) }
+    };
+    hits.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then(a.entry.done.cmp(&b.entry.done))
+            .then(when(a).cmp(&when(b)))
+            .then(a.entry.start.cmp(&b.entry.start))
+            .then(
+                a.entry
+                    .title
+                    .to_lowercase()
+                    .cmp(&b.entry.title.to_lowercase()),
+            )
+    });
+    hits
+}
+
+/// Contiguous matches of the whole query count most; otherwise the average
+/// of each word's score (a word found only in `#list` scores nothing).
+fn search_score(words: &[String], title: &str) -> i64 {
+    let q = words.join(" ");
+    let t = title.to_lowercase();
+    if t.contains(&q) {
+        return score(&q, title).unwrap_or(0);
+    }
+    let sum: i64 = words
+        .iter()
+        .map(|w| {
+            if t.contains(w.as_str()) {
+                score(w, title).unwrap_or(0)
+            } else {
+                0
+            }
+        })
+        .sum();
+    sum / words.len() as i64
+}
+
+/// The occurrence to show for an event: the next one touching today or
+/// later, or the last one before today when the series is over.
+fn nearest_occurrence(item: &Item, today: NaiveDate, tz: Tz) -> Option<recur::Occurrence> {
+    let first = item.f.start?.date(tz);
+    if !item.is_recurring() {
+        return recur::occurrences(item, first, first + Duration::days(1), tz).pop();
+    }
+    for days in [32, 400, 4000] {
+        let next = recur::occurrences(item, today, today + Duration::days(days), tz);
+        if let Some(o) = next.into_iter().next() {
+            return Some(o);
+        }
+    }
+    for days in [32, 400] {
+        let from = (today - Duration::days(days)).max(first);
+        if let Some(o) = recur::occurrences(item, from, today, tz).pop() {
+            return Some(o);
+        }
+    }
+    recur::occurrences(item, first, today, tz).pop()
+}
+
+/// An event occurrence as an entry on its start day.
+fn event_entry(item: &Item, occ: &recur::Occurrence, o: &Opts) -> Entry {
+    let tz = o.tz;
+    let day = occ.start.date(tz);
+    let all_day = occ.start.is_date();
+    let end = occ
+        .end
+        .filter(|_| !all_day)
+        .map(|e| e.local(tz))
+        .filter(|e| e.date() == day)
+        .map(|e| e.time());
+    Entry {
+        uid: item.uid.clone(),
+        rid: occ.rid,
+        kind: Kind::Event,
+        title: occ.f.title.clone(),
+        list: item.list.clone(),
+        day,
+        start: occ.start.time(tz),
+        end,
+        continued: false,
+        all_day,
+        done: false,
+        overdue: false,
+        priority: occ.f.priority,
+        recurring: item.is_recurring(),
+        progress: None,
+        due: None,
+        now: !all_day
+            && occ.start.instant(tz) <= o.now
+            && occ.end.is_some_and(|e| e.instant(tz) > o.now),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -582,6 +742,85 @@ mod tests {
         let rows = tasks(&store, None, Sort::Due, &o);
         assert_eq!(rows.first().unwrap().entry.title, "renew passport");
         assert_eq!(rows.last().unwrap().entry.title, "someday thing");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn search_everything() {
+        let dir = std::env::temp_dir().join(format!("ctui-search-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut store = Store::open(&dir.join("data"), None).unwrap();
+        let mut j = Journal::load(&dir.join("state"));
+        let cfg = Config::default();
+        let tz = Tz::Europe__London;
+        let now = tz.with_ymd_and_hms(2026, 10, 15, 12, 0, 0).unwrap();
+        let env = Env { now, tz, cfg: &cfg };
+        let d = Defaults::default();
+        let mut add = |t: &str| {
+            ops::add(&mut store, &mut j, &env, t, None, &d)
+                .unwrap()
+                .uid
+                .unwrap()
+        };
+        let undated = add("milk");
+        let done = add("milk 2026-10-14");
+        let soon = add("milk tomorrow 3pm");
+        let later = add("milk dec 1");
+        let past = add("milk 2026-09-01 2-3pm #health!");
+        let weekly = add("milk class every mon 7-8am");
+        let ended = add("milk club 2026-09-01 9-10am every day");
+        add("bread");
+        ops::set_done(&mut store, &mut j, &env, &done, true).unwrap();
+        // End the daily series after three days.
+        let mut item = store.get(&ended).unwrap().clone();
+        item.f.rrule = Some("FREQ=DAILY;COUNT=3".into());
+        item.sync(now);
+        store
+            .commit(&mut j, "end", vec![crate::core::store::Change::Put(item)])
+            .unwrap();
+        let o = Opts {
+            now,
+            tz,
+            hide_done_after: Some(Duration::days(1)),
+        };
+        let date = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+
+        assert!(
+            search(&store, "  ", &o).is_empty(),
+            "empty query finds nothing"
+        );
+        assert!(search(&store, "cheese", &o).is_empty());
+
+        let hits = search(&store, "MILK", &o);
+        let uids: Vec<&str> = hits.iter().map(|h| h.entry.uid.as_str()).collect();
+        // Exact titles first: upcoming nearest first, then undated, then past,
+        // then the done one; the weaker "milk class/club" matches after.
+        assert_eq!(
+            uids,
+            vec![
+                soon.as_str(),
+                later.as_str(),
+                undated.as_str(),
+                past.as_str(),
+                done.as_str(),
+                weekly.as_str(),
+                ended.as_str()
+            ]
+        );
+        assert!(hits[2].undated());
+        assert!(hits[4].entry.done);
+        assert_eq!(hits[3].entry.start, NaiveTime::from_hms_opt(14, 0, 0));
+        // A repeating event shows its next occurrence (Mon 19 Oct)…
+        assert_eq!(hits[5].entry.day, date("2026-10-19"));
+        assert!(hits[5].entry.recurring && hits[5].entry.rid.is_some());
+        // …or its last one when the series is over.
+        assert_eq!(hits[6].entry.day, date("2026-09-03"));
+
+        // Every word must match, in the title or the #list.
+        let hits = search(&store, "milk #health", &o);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].entry.uid, past);
+        assert_eq!(search(&store, "club milk", &o).len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

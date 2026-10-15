@@ -66,6 +66,14 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
+    /// Search every task and event: any date, any list, undated and done too
+    #[command(visible_alias = "find")]
+    Search {
+        #[arg(required = true)]
+        words: Vec<String>,
+        #[arg(long)]
+        json: bool,
+    },
     /// A month at a glance: ct cal, ct cal nov, ct cal 2027-01
     Cal {
         month: Vec<String>,
@@ -355,6 +363,72 @@ fn when_text(s: &Session, e: &Entry, show_day: bool) -> String {
     parts.join(" ")
 }
 
+/// When a search result is: `tomorrow 15:00`, `Sat 17 Oct 14:00–15:00`,
+/// `1 Sep 2025 all day`, `undated`. Shared with the TUI's search panel.
+pub fn search_when(e: &Entry, today: NaiveDate, fmt: config::TimeFormat) -> String {
+    let day = match (e.kind, e.due) {
+        (Kind::Task, None) => return "undated".into(),
+        (Kind::Task, Some(d)) => d,
+        (Kind::Event, _) => e.day,
+    };
+    let mut s = short_day(day, today);
+    match (e.start, e.end, e.all_day) {
+        (_, _, true) => s.push_str(" all day"),
+        (Some(a), Some(b), _) => s.push_str(&format!(" {}–{}", fmt_time(a, fmt), fmt_time(b, fmt))),
+        (Some(a), None, _) => s.push_str(&format!(" {}", fmt_time(a, fmt))),
+        _ => {}
+    }
+    s
+}
+
+fn cmd_search(s: &mut Session, out: &mut Out, words: &[String], json: bool) -> Result<()> {
+    let o = opts(s);
+    let q = words.join(" ");
+    let mut hits = query::search(&s.store, &q, &o);
+    let more = hits.len().saturating_sub(query::SEARCH_LIMIT);
+    hits.truncate(query::SEARCH_LIMIT);
+    save_listing(
+        s,
+        &hits
+            .iter()
+            .map(|h| (h.entry.uid.clone(), h.entry.rid))
+            .collect::<Vec<_>>(),
+    );
+    if json {
+        let v: Vec<serde_json::Value> = hits
+            .iter()
+            .enumerate()
+            .map(|(i, h)| {
+                let mut v = serde_json::to_value(json_entry(i + 1, &h.entry))?;
+                if h.undated() {
+                    v["day"] = serde_json::Value::Null;
+                }
+                Ok(v)
+            })
+            .collect::<Result<_>>()?;
+        return out.line(&serde_json::to_string_pretty(&v)?);
+    }
+    if hits.is_empty() {
+        bail!("nothing matches {q:?}");
+    }
+    let today = o.today();
+    let w = hits
+        .iter()
+        .map(|h| h.entry.title.chars().count())
+        .max()
+        .unwrap_or(0)
+        .min(48);
+    for (i, h) in hits.iter().enumerate() {
+        let when = search_when(&h.entry, today, s.cfg.time_format);
+        out.line(&entry_line(s, out, i + 1, &h.entry, &when, w))?;
+    }
+    if more > 0 {
+        let msg = format!("  +{more} more · add words to narrow it");
+        out.line(&out.paint(&msg, s.theme.sub, false))?;
+    }
+    Ok(())
+}
+
 pub fn short_day(d: NaiveDate, today: NaiveDate) -> String {
     match (d - today).num_days() {
         0 => "today".into(),
@@ -366,17 +440,9 @@ pub fn short_day(d: NaiveDate, today: NaiveDate) -> String {
     }
 }
 
-fn entry_line(
-    s: &Session,
-    out: &Out,
-    n: usize,
-    e: &Entry,
-    show_day: bool,
-    title_w: usize,
-) -> String {
+fn entry_line(s: &Session, out: &Out, n: usize, e: &Entry, when: &str, title_w: usize) -> String {
     let t = &s.theme;
     let num = out.paint(&format!("{n:>3}"), t.sub, false);
-    let when = when_text(s, e, show_day);
     let title = if let Some((d, total)) = e.progress {
         format!("{} {d}/{total}", e.title)
     } else {
@@ -506,7 +572,7 @@ fn cmd_ls(s: &mut Session, out: &mut Out, filter: &[String], json: bool) -> Resu
         .unwrap_or(0)
         .min(48);
     for (i, e) in shown.iter().enumerate() {
-        let l = entry_line(s, out, i + 1, e, true, w);
+        let l = entry_line(s, out, i + 1, e, &when_text(s, e, true), w);
         out.line(&l)?;
     }
     Ok(())
@@ -549,7 +615,8 @@ fn cmd_today(s: &mut Session, out: &mut Out, days: Option<u32>, json: bool) -> R
             listing.push((e.uid.clone(), e.rid));
             let n = listing.len();
             jsons.push(json_entry(n, e));
-            lines.push(entry_line(s, out, n, e, sec.day.is_none(), w));
+            let when = when_text(s, e, sec.day.is_none());
+            lines.push(entry_line(s, out, n, e, &when, w));
         }
     }
     save_listing(s, &listing);
@@ -712,6 +779,7 @@ pub fn run(s: &mut Session, cmd: Cmd, out: &mut Out, interactive: bool) -> Resul
         }
         Cmd::Ls { filter, json } => cmd_ls(s, out, &filter, json)?,
         Cmd::Today { days, json } => cmd_today(s, out, days, json)?,
+        Cmd::Search { words, json } => cmd_search(s, out, &words, json)?,
         Cmd::Cal { month, json } => cmd_cal(s, out, &month, json)?,
         Cmd::Done { refs } => {
             for r in refs {
