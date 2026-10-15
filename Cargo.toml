@@ -4,6 +4,7 @@ version = "0.1.1"
 edition = "2024"
 description = "Minimal terminal calendar and task list, as a TUI and a CLI"
 license = "MIT"
+repository = "https://github.com/andples/ctui"
 readme = "README.md"
 keywords = ["calendar", "todo", "tui", "icalendar", "ratatui"]
 categories = ["command-line-utilities", "date-and-time"]
