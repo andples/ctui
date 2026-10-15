@@ -3,7 +3,7 @@
 Minimal terminal calendar + task list in Rust (ratatui + crossterm + clap). Binary `ctui`
 (users alias `ct`). The plan, decisions and milestones are in `DESIGN.md` (§12 has the
 source layout): read it first and keep it current when a decision changes. The repo is
-private and has no license yet (owner's call, DESIGN.md §16); don't publish anything.
+private and has no license yet (owner's call, DESIGN.md §17); don't publish anything.
 
 Rules that override convenience:
 - Usability first, no bloat (DESIGN.md §1, §15). A new dependency or feature must justify itself.
