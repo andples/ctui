@@ -94,7 +94,7 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     };
     app.body_height = body.height as usize;
     match app.view {
-        View::Agenda | View::Tasks => draw_list(f, app, &p, body),
+        View::Today | View::Tasks => draw_list(f, app, &p, body),
         View::Month => draw_month(f, app, &p, body),
     }
     if input_h > 0 {
@@ -912,7 +912,7 @@ fn hints(app: &App) -> Vec<(Action, &'static str)> {
     match app.view {
         View::Month => v.extend([(PrevPeriod, "month"), (ItemDown, "pick"), (Today, "today")]),
         View::Tasks => v.extend([(TabNext, "list"), (Sort, "sort")]),
-        View::Agenda => v.extend([(Someday, "undated"), (Today, "today")]),
+        View::Today => v.extend([(Someday, "undated"), (Today, "today")]),
     }
     v.extend([
         (Undo, "undo"),

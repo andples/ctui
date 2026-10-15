@@ -12,17 +12,18 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "lowercase")]
 pub enum View {
     #[default]
-    Agenda,
+    #[serde(alias = "agenda")]
+    Today,
     Month,
     Tasks,
 }
 
 impl View {
-    pub const ALL: [View; 3] = [View::Agenda, View::Month, View::Tasks];
+    pub const ALL: [View; 3] = [View::Today, View::Month, View::Tasks];
 
     pub fn name(self) -> &'static str {
         match self {
-            View::Agenda => "agenda",
+            View::Today => "today",
             View::Month => "month",
             View::Tasks => "tasks",
         }
@@ -69,7 +70,8 @@ pub struct Config {
     pub week_start: Weekday,
     pub date_order: DateOrder,
     pub time_format: TimeFormat,
-    pub agenda_days: u32,
+    #[serde(alias = "agenda_days")]
+    pub days_ahead: u32,
     /// How long done tasks stay visible: `0`, `12h`, `1d`, `7d`, `never`.
     pub hide_done_after: String,
     /// Overdue tasks shown before "+N more".
@@ -90,12 +92,12 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             theme: "default".into(),
-            default_view: View::Agenda,
+            default_view: View::Today,
             views: View::ALL.to_vec(),
             week_start: Weekday::Mon,
             date_order: DateOrder::Dmy,
             time_format: TimeFormat::H24,
-            agenda_days: 7,
+            days_ahead: 7,
             hide_done_after: "1d".into(),
             overdue_collapse: 5,
             default_list: "personal".into(),
@@ -231,19 +233,19 @@ impl Config {
             .into_iter()
             .filter(|v| self.views.contains(v))
             .collect();
-        if v.is_empty() { vec![View::Agenda] } else { v }
+        if v.is_empty() { vec![View::Today] } else { v }
     }
 }
 
 /// The settings `:set` knows, with a word on each (for completion and help).
 pub const SETTINGS: &[(&str, &str)] = &[
     ("theme", "colour theme"),
-    ("default_view", "agenda | month | tasks"),
-    ("views", "views to show, e.g. agenda,tasks"),
+    ("default_view", "today | month | tasks"),
+    ("views", "views to show, e.g. today,tasks"),
     ("week_start", "monday … sunday"),
     ("date_order", "dmy | mdy | ymd"),
     ("time_format", "24h | 12h"),
-    ("agenda_days", "days the agenda shows"),
+    ("days_ahead", "days the Today page shows"),
     ("hide_done_after", "0 | 12h | 1d | 7d | never"),
     ("overdue_collapse", "overdue tasks before +N more"),
     ("default_list", "list for new items"),
@@ -255,7 +257,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
 fn parse_value(key: &str, value: &str) -> Result<toml::Value> {
     let value = value.trim();
     Ok(match key {
-        "agenda_days" | "overdue_collapse" => toml::Value::Integer(
+        "days_ahead" | "overdue_collapse" => toml::Value::Integer(
             value
                 .parse()
                 .with_context(|| format!("{key} takes a number"))?,
@@ -373,7 +375,7 @@ mod tests {
         let c: Config = toml::from_str("week_start = \"sunday\"\ntime_format = \"12h\"\n").unwrap();
         assert_eq!(c.week_start, Weekday::Sun);
         assert_eq!(c.time_format, TimeFormat::H12);
-        assert_eq!(c.agenda_days, 7);
+        assert_eq!(c.days_ahead, 7);
     }
 
     #[test]

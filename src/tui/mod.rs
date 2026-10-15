@@ -88,7 +88,7 @@ fn event_loop(term: &mut Term, app: &mut App, mouse: bool) -> Result<()> {
     Ok(())
 }
 
-/// In the month view, enter opens the selected day in the agenda.
+/// In the month view, enter opens the selected day on the Today page.
 fn month_enter(app: &mut App, k: &crossterm::event::KeyEvent) -> bool {
     if app.view == crate::config::View::Month
         && matches!(app.mode, app::Mode::Normal)

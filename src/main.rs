@@ -28,11 +28,11 @@ fn run(args: Cli) -> anyhow::Result<()> {
     let mut session = Session::open(paths, cfg)?;
     let cmd = match args.cmd {
         Some(c) => c,
-        // No arguments: the TUI, or the agenda when piped.
+        // No arguments: the TUI, or the Today list when piped.
         None if std::io::stdout().is_terminal() && std::io::stdin().is_terminal() => {
             return ctui::tui::run(session);
         }
-        None => Cmd::Ag {
+        None => Cmd::Today {
             days: None,
             json: false,
         },

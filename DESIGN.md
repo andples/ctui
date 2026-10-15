@@ -68,7 +68,10 @@ They're shown collapsed under the parent with a `2/5` count.
 Three views. `1` `2` `3` (or `tab`) switches between them. Each can be hidden in
 the config, and the default view is configurable.
 
-### 3.1 Agenda (default): tasks and calendar together
+### 3.1 Today (default): tasks and calendar together
+
+(Called Agenda until 2026-10-16; the owner renamed it. Old config values
+`agenda`, `agenda_days` and `ct ag` still work.)
 
 ```
  ctui                                         Wed 15 Oct 2026
@@ -240,7 +243,7 @@ come from the config.
 ct                              open the TUI
 ct add <text>                   add (task or event, by the grammar)
 ct ls [today|week|overdue|all|#list|<query>]     list tasks (default: open, due ≤ today + undated)
-ct ag [days]                    agenda: events and tasks, next 7 days by default
+ct today [days]                 Today: overdue, today and the next days (aliases: ag, agenda)
 ct cal [month]                  print a month grid (like `cal`, with dots)
 ct done <ref>…                  tick off (recurring tasks advance)
 ct undone <ref>
@@ -277,7 +280,7 @@ keymap, so it can't go out of date.
 | Key | Action |
 |---|---|
 | `j/k` `↓/↑` | move |
-| `1` `2` `3` / `tab` | Agenda / Month / Tasks |
+| `1` `2` `3` / `tab` | Today / Month / Tasks |
 | `a` / `A` | add (grammar; `A` forces an event); prefilled with the selected day or list |
 | `x` / `space` | tick off / un-tick (on a parent: expand/collapse) |
 | `e` / `enter` | edit: the add bar prefilled with the item as grammar text |
@@ -349,12 +352,12 @@ changes a setting from inside the TUI and saves it right away.
 
 ```toml
 theme        = "default"        # or a file in themes/
-default_view = "agenda"         # agenda | month | tasks
-views        = ["agenda", "month", "tasks"]
+default_view = "today"          # today | month | tasks
+views        = ["today", "month", "tasks"]
 week_start   = "monday"
 date_order   = "dmy"            # dmy | mdy | ymd (for typed dates like 20/10)
 time_format  = "24h"            # 24h | 12h
-agenda_days  = 7
+days_ahead   = 7            # days the Today page shows
 hide_done_after = "1d"          # done items stay visible this long
 default_list = "personal"
 mouse        = true

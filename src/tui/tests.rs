@@ -87,7 +87,7 @@ fn enter(app: &mut App) {
 #[test]
 fn every_view_draws_at_every_size() {
     let mut t = setup("sizes");
-    for v in [View::Agenda, View::Month, View::Tasks] {
+    for v in [View::Today, View::Month, View::Tasks] {
         t.app.view = v;
         t.app.rebuild();
         for (w, h) in [(40, 12), (60, 20), (80, 24), (120, 40), (200, 60), (20, 6)] {
@@ -95,7 +95,7 @@ fn every_view_draws_at_every_size() {
             assert!(s.contains("ctui"), "{v:?} {w}x{h}");
         }
     }
-    t.app.view = View::Agenda;
+    t.app.view = View::Today;
     t.app.rebuild();
     let s = screen(&mut t.app, 100, 30);
     for want in [

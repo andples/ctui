@@ -13,7 +13,7 @@ ct add dentist sat 2-3pm @health!   # an event (a time range makes it one), in a
 ct add "standup 9:30 15m every weekday @work"
 ct ls                               # open tasks due by today, and undated ones
 ct done rent                        # by words, or by number from the last list
-ct ag                               # agenda: the next 7 days
+ct today                            # overdue, today and the next 7 days (also: ct ag)
 ct cal                              # this month at a glance
 ct undo                             # every change can be undone
 ct                                  # the TUI
@@ -71,17 +71,17 @@ line underneath says what will be created, so you never have to guess.
 
 ## The TUI
 
-Three views: **Agenda** (tasks and events together, by day), **Month** and
+Three views: **Today** (overdue, today and the next days: tasks and events together), **Month** and
 **Tasks** (a checklist per list). The bottom line always shows the keys that
 do something right now; `?` shows them all, plus the grammar.
 
 | Key | |
 |---|---|
 | `j` `k` / arrows | move (in Month: `h j k l` move the day, `J` `K` pick in the day's list) |
-| `1` `2` `3` / `tab` | Agenda / Month / Tasks |
+| `1` `2` `3` / `tab` | Today / Month / Tasks |
 | `a` / `A` | add / add an event (prefilled with the selected day or list: just type the title) |
 | `x` / `space` | tick off (`space` on a parent opens its subtasks) |
-| `e` / `enter` | edit as text (in Month, `enter` opens the day in the Agenda) |
+| `e` / `enter` | edit as text (in Month, `enter` opens the day on the Today page) |
 | `E` | edit the raw `.ics` in `$EDITOR` |
 | `d` | delete. No confirmation: `u` brings it back |
 | `u` / `ctrl+r` | undo / redo (shared with `ct undo` in a shell) |
@@ -92,7 +92,7 @@ do something right now; `?` shows them all, plus the grammar.
 | `H` `L` / `←` `→` | previous / next list (Tasks view) |
 | `s` | sort: due / priority / manual (Tasks view) |
 | `t` `[` `]` `g` | today, previous / next week or month, go to a date |
-| `T` | show undated tasks in the Agenda |
+| `T` | show undated tasks on the Today page |
 | `/` | filter as you type; `esc` clears |
 | `c` | colour themes, previewed live as you move |
 | `:` | the command line: any `ct` command (`:import ~/takeout.zip`, `:theme nord`, `:set week_start sunday`, `:ls all`) |
@@ -182,12 +182,12 @@ the TUI) lists them and changes one; it's saved immediately.
 
 ```toml
 theme        = "default"      # ct theme lists them
-default_view = "agenda"       # agenda | month | tasks
-views        = ["agenda", "month", "tasks"]
+default_view = "today"        # today | month | tasks
+views        = ["today", "month", "tasks"]
 week_start   = "monday"
 date_order   = "dmy"          # dmy | mdy | ymd, for typed dates like 20/10
 time_format  = "24h"          # 24h | 12h
-agenda_days  = 7
+days_ahead   = 7            # days the Today page shows
 hide_done_after = "1d"        # 0 | 12h | 1d | 7d | never
 overdue_collapse = 5          # overdue tasks shown before "+N more"
 default_list = "personal"
@@ -235,10 +235,10 @@ run time rather than compiled in: packages install them to
 
 ## Scripting
 
-Every read command takes `--json` (`ct ls --json`, `ct ag --json`,
+Every read command takes `--json` (`ct ls --json`, `ct today --json`,
 `ct cal --json`, `ct lists --json`). Exit codes: 0 ok, 1 error or no match,
 2 a reference matched several items. Output is plain when piped and respects
-`NO_COLOR`. `ctui` with no arguments and no terminal prints the agenda.
+`NO_COLOR`. `ctui` with no arguments and no terminal prints the Today list.
 `ct completions bash|zsh|fish` prints shell completions (for the alias in
 bash: `complete -o default -F _ctui ct`).
 

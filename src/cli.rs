@@ -55,9 +55,9 @@ pub enum Cmd {
         #[arg(long)]
         json: bool,
     },
-    /// Agenda: events and tasks for the next days
-    #[command(visible_alias = "agenda")]
-    Ag {
+    /// Today: overdue, today and the next days, events and tasks together
+    #[command(visible_aliases = ["ag", "agenda"])]
+    Today {
         days: Option<u32>,
         #[arg(long)]
         json: bool,
@@ -506,12 +506,12 @@ fn cmd_ls(s: &mut Session, out: &mut Out, filter: &[String], json: bool) -> Resu
     Ok(())
 }
 
-fn cmd_ag(s: &mut Session, out: &mut Out, days: Option<u32>, json: bool) -> Result<()> {
+fn cmd_today(s: &mut Session, out: &mut Out, days: Option<u32>, json: bool) -> Result<()> {
     let o = opts(s);
     let sections = query::agenda(
         &s.store,
         o.today(),
-        days.unwrap_or(s.cfg.agenda_days),
+        days.unwrap_or(s.cfg.days_ahead),
         &o,
         0,
         true,
@@ -705,7 +705,7 @@ pub fn run(s: &mut Session, cmd: Cmd, out: &mut Out, interactive: bool) -> Resul
             out.line(&r.message)?;
         }
         Cmd::Ls { filter, json } => cmd_ls(s, out, &filter, json)?,
-        Cmd::Ag { days, json } => cmd_ag(s, out, days, json)?,
+        Cmd::Today { days, json } => cmd_today(s, out, days, json)?,
         Cmd::Cal { month, json } => cmd_cal(s, out, &month, json)?,
         Cmd::Done { refs } => {
             for r in refs {

@@ -255,12 +255,12 @@ impl App {
         let today = o.today();
         let mut rows = Vec::new();
         match self.view {
-            View::Agenda => {
+            View::Today => {
                 let from = self.agenda_from.unwrap_or(today);
                 let sections = query::agenda(
                     &self.s.store,
                     from,
-                    self.s.cfg.agenda_days,
+                    self.s.cfg.days_ahead,
                     &o,
                     self.s.cfg.overdue_collapse,
                     self.all_overdue,
@@ -478,7 +478,7 @@ impl App {
         }
         if v == View::Month
             && let Some(d) = self.selected().map(|e| e.day)
-            && self.view == View::Agenda
+            && self.view == View::Today
         {
             self.month_day = d;
         }
@@ -499,7 +499,7 @@ impl App {
     fn context_day(&self) -> Option<NaiveDate> {
         match self.view {
             View::Month => Some(self.month_day),
-            View::Agenda => {
+            View::Today => {
                 // The section the selection sits in.
                 let mut day = None;
                 for (i, r) in self.rows.iter().enumerate() {
@@ -583,7 +583,7 @@ impl App {
                 match self.view {
                     View::Month => self.shift_day(d),
                     View::Tasks => self.shift_tab(d),
-                    View::Agenda => self.move_sel(d),
+                    View::Today => self.move_sel(d),
                 }
             }
             Action::ItemDown | Action::ItemUp if self.view == View::Month => {
@@ -593,9 +593,9 @@ impl App {
             Action::PageUp => self.move_sel(-page),
             Action::Top => self.move_sel(-100_000),
             Action::Bottom => self.move_sel(100_000),
-            Action::Agenda => self.switch(View::Agenda),
-            Action::Month => self.switch(View::Month),
-            Action::Tasks => self.switch(View::Tasks),
+            Action::ViewToday => self.switch(View::Today),
+            Action::ViewMonth => self.switch(View::Month),
+            Action::ViewTasks => self.switch(View::Tasks),
             Action::NextView => self.cycle_view(1),
             Action::PrevView => self.cycle_view(-1),
             Action::Add => self.open_add(false),
@@ -691,7 +691,7 @@ impl App {
                 self.sel = 0;
                 self.scroll = 0;
                 self.rebuild();
-                if self.view == View::Agenda
+                if self.view == View::Today
                     && let Some(i) = self
                         .rows
                         .iter()
@@ -704,9 +704,9 @@ impl App {
             Action::PrevPeriod | Action::NextPeriod => {
                 let d: i64 = if a == Action::NextPeriod { 1 } else { -1 };
                 match self.view {
-                    View::Agenda => {
+                    View::Today => {
                         let from = self.agenda_from.unwrap_or(self.today())
-                            + Duration::days(d * self.s.cfg.agenda_days as i64);
+                            + Duration::days(d * self.s.cfg.days_ahead as i64);
                         self.agenda_from = if from == self.today() {
                             None
                         } else {
@@ -729,7 +729,7 @@ impl App {
                 self.mode = Mode::Input(Input::new(InputKind::Command, String::new(), 0))
             }
             Action::Someday => {
-                if self.view == View::Agenda {
+                if self.view == View::Today {
                     self.someday = !self.someday;
                     self.rebuild();
                     self.toast(if self.someday {
@@ -738,7 +738,7 @@ impl App {
                         "undated tasks hidden"
                     });
                 } else {
-                    self.switch(View::Agenda);
+                    self.switch(View::Today);
                     self.someday = true;
                     self.rebuild();
                 }
@@ -1282,9 +1282,9 @@ impl App {
                 self.open_themes();
                 return;
             }
-            Some(v @ ("agenda" | "month" | "tasks")) if words.len() == 1 => {
+            Some(v @ ("today" | "agenda" | "month" | "tasks")) if words.len() == 1 => {
                 self.switch(match v {
-                    "agenda" => View::Agenda,
+                    "today" | "agenda" => View::Today,
                     "month" => View::Month,
                     _ => View::Tasks,
                 });
@@ -1407,10 +1407,10 @@ impl App {
         self.rebuild();
     }
 
-    /// Opens a day in the agenda (enter or a second click in the month view).
+    /// Opens a day on the Today page (enter or a second click in the month view).
     pub fn switch_to_day(&mut self, d: NaiveDate) {
         self.agenda_from = if d == self.today() { None } else { Some(d) };
-        self.switch(View::Agenda);
+        self.switch(View::Today);
     }
 
     /// Month grid bounds: the first shown day and the month's last day.
@@ -1490,7 +1490,7 @@ pub fn command_names() -> Vec<String> {
         })
         .filter(|n| n != "completions")
         .collect();
-    v.extend(["quit", "help", "agenda", "month", "tasks"].map(String::from));
+    v.extend(["quit", "help", "month", "tasks"].map(String::from));
     v.sort();
     v.dedup();
     v

@@ -15,9 +15,9 @@ pub enum Action {
     PageUp,
     Top,
     Bottom,
-    Agenda,
-    Month,
-    Tasks,
+    ViewToday,
+    ViewMonth,
+    ViewTasks,
     NextView,
     PrevView,
     Add,
@@ -71,9 +71,9 @@ pub const TABLE: &[(Action, &str, &[&str], &str)] = &[
     ),
     (Action::Top, "top", &["home"], "first item"),
     (Action::Bottom, "bottom", &["G", "end"], "last item"),
-    (Action::Agenda, "agenda", &["1"], "agenda view"),
-    (Action::Month, "month", &["2"], "month view"),
-    (Action::Tasks, "tasks", &["3"], "tasks view"),
+    (Action::ViewToday, "view_today", &["1"], "Today page"),
+    (Action::ViewMonth, "view_month", &["2"], "Month page"),
+    (Action::ViewTasks, "view_tasks", &["3"], "Tasks page"),
     (Action::NextView, "next_view", &["tab"], "next view"),
     (Action::PrevView, "prev_view", &["backtab"], "previous view"),
     (Action::Add, "add", &["a"], "add (quick-add text)"),
@@ -149,7 +149,7 @@ pub const TABLE: &[(Action, &str, &[&str], &str)] = &[
         Action::Someday,
         "someday",
         &["T"],
-        "show undated tasks in the agenda",
+        "show undated tasks on the Today page",
     ),
     (
         Action::Sort,
@@ -274,7 +274,14 @@ impl Keymap {
             by_action.insert(*a, keys.iter().filter_map(|k| Key::parse(k)).collect());
         }
         for (name, keys) in overrides {
-            match TABLE.iter().find(|(_, n, _, _)| n == name) {
+            // Names from before the Agenda page became Today.
+            let name = match name.as_str() {
+                "agenda" => "view_today",
+                "month" => "view_month",
+                "tasks" => "view_tasks",
+                n => n,
+            };
+            match TABLE.iter().find(|(_, n, _, _)| *n == name) {
                 Some((a, ..)) => {
                     let parsed: Vec<Key> = keys
                         .iter()
