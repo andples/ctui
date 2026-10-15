@@ -88,6 +88,9 @@ fn expand(
     before: DateTime<Tz>,
     tz: Tz,
 ) -> Option<Vec<Moment>> {
+    if !plausible(rule) {
+        return None;
+    }
     let rule = normalize_until(rule, start, tz);
     let parsed: RRule<Unvalidated> = rule.parse().ok()?;
     let dtstart = anchor(start, tz);
@@ -109,6 +112,20 @@ fn expand(
             .map(|d| back_to_moment(start, d))
             .collect(),
     )
+}
+
+/// Only characters an RRULE can contain. The rrule crate panics on some
+/// malformed input (non-ASCII in BYDAY), and release builds abort on a panic,
+/// so anything else is refused before it gets there.
+pub fn plausible(rule: &str) -> bool {
+    !rule.is_empty()
+        && rule.len() < 1000
+        && rule.bytes().all(|b| {
+            b.is_ascii_uppercase()
+                || b.is_ascii_lowercase()
+                || b.is_ascii_digit()
+                || b"=;,+-:".contains(&b)
+        })
 }
 
 fn same_moment(a: &Moment, b: &Moment, tz: Tz) -> bool {

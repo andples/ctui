@@ -150,6 +150,9 @@ fn sources_from_file(name: &str, bytes: Vec<u8>) -> Result<Vec<Source>> {
     bail!("{name}: not an .ics, .zip or Tasks.json file")
 }
 
+/// Largest single file read out of a zip.
+const MAX_ENTRY: u64 = 200_000_000;
+
 /// Reads every calendar at `path`: a file, a folder (recursively) or a zip.
 pub fn read_path(path: &Path) -> Result<Vec<Source>> {
     if path.is_dir() {
@@ -205,9 +208,16 @@ pub fn read_path(path: &Path) -> Result<Vec<Source>> {
             if !(l.ends_with(".ics") || file == "tasks.json") {
                 continue;
             }
-            let mut f = zip.by_name(&n)?;
+            let f = zip.by_name(&n)?;
             let mut buf = Vec::new();
-            f.read_to_end(&mut buf)?;
+            // A zip bomb shouldn't take the machine down: real calendars are far smaller.
+            f.take(MAX_ENTRY + 1).read_to_end(&mut buf)?;
+            if buf.len() as u64 > MAX_ENTRY {
+                bail!(
+                    "{n} is over {} MB unpacked; not a calendar export",
+                    MAX_ENTRY / 1_000_000
+                );
+            }
             let short = Path::new(&n)
                 .file_name()
                 .map(|f| f.to_string_lossy().to_string())

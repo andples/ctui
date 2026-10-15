@@ -28,8 +28,9 @@ impl Moment {
             .is_some_and(|x| x.eq_ignore_ascii_case("DATE"))
             || (v.len() == 8 && !v.contains('T'));
         if is_date {
-            return NaiveDate::parse_from_str(&v[..8.min(v.len())], "%Y%m%d")
+            return NaiveDate::parse_from_str(v.get(..8).unwrap_or(v), "%Y%m%d")
                 .ok()
+                .filter(|d| (1..=9999).contains(&d.year()))
                 .map(Moment::Date);
         }
         let (body, utc) = match v.strip_suffix(['Z', 'z']) {
@@ -38,7 +39,8 @@ impl Moment {
         };
         let naive = NaiveDateTime::parse_from_str(body, "%Y%m%dT%H%M%S")
             .or_else(|_| NaiveDateTime::parse_from_str(body, "%Y%m%dT%H%M"))
-            .ok()?;
+            .ok()
+            .filter(|n| (1..=9999).contains(&n.year()))?;
         if utc {
             return Some(Moment::Zoned(Tz::UTC.from_utc_datetime(&naive)));
         }
@@ -108,15 +110,18 @@ impl Moment {
     }
 
     /// The same kind of moment moved by `days`, keeping the wall-clock time.
+    /// (Unchanged if that would leave the calendar's range.)
     pub fn shift_days(&self, days: i64) -> Self {
-        let d = Duration::days(days);
+        let Some(d) = Duration::try_days(days) else {
+            return *self;
+        };
         match self {
-            Moment::Date(x) => Moment::Date(*x + d),
-            Moment::Floating(n) => Moment::Floating(*n + d),
-            Moment::Zoned(dt) => {
-                let zone = dt.timezone();
-                Moment::Zoned(resolve(zone, dt.naive_local() + d))
-            }
+            Moment::Date(x) => x.checked_add_signed(d).map_or(*self, Moment::Date),
+            Moment::Floating(n) => n.checked_add_signed(d).map_or(*self, Moment::Floating),
+            Moment::Zoned(dt) => match dt.naive_local().checked_add_signed(d) {
+                Some(n) => Moment::Zoned(resolve(dt.timezone(), n)),
+                None => *self,
+            },
         }
     }
 
@@ -171,6 +176,13 @@ pub fn now_in(tz: Tz) -> DateTime<Tz> {
     Utc::now().with_timezone(&tz)
 }
 
+/// The longest duration ctui accepts anywhere (event length, reminder,
+/// DURATION): ten years. Longer is junk, and refusing it keeps date maths
+/// far from chrono's limits.
+pub fn max_length() -> Duration {
+    Duration::days(3660)
+}
+
 /// Parses an iCalendar DURATION (`PT10M`, `-P1D`, `P1DT2H30M`, `P2W`).
 pub fn parse_duration(s: &str) -> Option<Duration> {
     let s = s.trim();
@@ -191,17 +203,20 @@ pub fn parse_duration(s: &str) -> Option<Duration> {
                 let n: i64 = num.parse().ok()?;
                 num.clear();
                 total += match (unit, in_time) {
-                    ('W', _) => Duration::weeks(n),
-                    ('D', _) => Duration::days(n),
-                    ('H', true) => Duration::hours(n),
-                    ('M', true) => Duration::minutes(n),
-                    ('S', true) => Duration::seconds(n),
+                    ('W', _) => Duration::try_weeks(n)?,
+                    ('D', _) => Duration::try_days(n)?,
+                    ('H', true) => Duration::try_hours(n)?,
+                    ('M', true) => Duration::try_minutes(n)?,
+                    ('S', true) => Duration::try_seconds(n)?,
                     _ => return None,
                 };
             }
         }
     }
     if !num.is_empty() {
+        return None;
+    }
+    if total > max_length() {
         return None;
     }
     Some(if neg { -total } else { total })
@@ -247,9 +262,12 @@ pub fn last_of_month(d: NaiveDate) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, 1).expect("valid month") - Duration::days(1)
 }
 
-/// `d` plus `months`, clamped to the end of a shorter month.
+/// `d` plus `months`, clamped to the end of a shorter month (and to the
+/// years 1–9999, so absurd input can't overflow).
 pub fn add_months(d: NaiveDate, months: i32) -> NaiveDate {
-    let total = d.year() * 12 + d.month0() as i32 + months;
+    let total = (d.year() * 12 + d.month0() as i32)
+        .saturating_add(months)
+        .clamp(12, 9999 * 12 + 11);
     let (y, m) = (total.div_euclid(12), total.rem_euclid(12) as u32 + 1);
     let first = NaiveDate::from_ymd_opt(y, m, 1).expect("valid month");
     let last = last_of_month(first).day();

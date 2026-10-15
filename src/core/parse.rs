@@ -316,6 +316,11 @@ fn year(s: &str) -> Option<i32> {
     (1900..=2200).contains(&n).then_some(n)
 }
 
+/// `today` plus `n` × `unit` days, or `None` past the calendar's range.
+fn offset(today: NaiveDate, n: i64, unit: i64) -> Option<NaiveDate> {
+    today.checked_add_signed(Duration::try_days(n.checked_mul(unit)?)?)
+}
+
 /// The next date (from today, inclusive) that is `wd`.
 fn next_weekday(today: NaiveDate, wd: Weekday) -> NaiveDate {
     let ahead = (7 + wd.num_days_from_monday() - today.weekday().num_days_from_monday()) % 7;
@@ -361,10 +366,13 @@ pub fn parse_length(s: &str) -> Option<Duration> {
             "w" | "wk" | "week" | "weeks" => n * 10080.0,
             _ => return None,
         };
+        if !mins.is_finite() || mins > super::time::max_length().num_minutes() as f64 {
+            return None;
+        }
         total += Duration::minutes(mins.round() as i64);
         any = true;
     }
-    (any && total > Duration::zero()).then_some(total)
+    (any && total > Duration::zero() && total <= super::time::max_length()).then_some(total)
 }
 
 /// One time of day: `3pm`, `3:30pm`, `15:00`, `9.30`, `noon`, `midnight`.
@@ -499,10 +507,10 @@ impl Parser<'_, '_> {
             let n: i64 = self.lower(i + 1)?.parse().ok()?;
             let unit = self.lower(i + 2)?;
             let d = match unit.trim_end_matches('s') {
-                "day" => today + Duration::days(n),
-                "week" => today + Duration::weeks(n),
-                "month" => add_months(today, n as i32),
-                "year" => add_months(today, n as i32 * 12),
+                "day" => offset(today, n, 1)?,
+                "week" => offset(today, n, 7)?,
+                "month" => add_months(today, i32::try_from(n).ok()?),
+                "year" => add_months(today, i32::try_from(n).ok()?.checked_mul(12)?),
                 _ => return None,
             };
             return Some((d, 3));
@@ -514,10 +522,10 @@ impl Parser<'_, '_> {
             );
             let n: i64 = num.parse().ok()?;
             let d = match unit {
-                "" | "d" => today + Duration::days(n),
-                "w" => today + Duration::weeks(n),
-                "m" => add_months(today, n as i32),
-                "y" => add_months(today, n as i32 * 12),
+                "" | "d" => offset(today, n, 1)?,
+                "w" => offset(today, n, 7)?,
+                "m" => add_months(today, i32::try_from(n).ok()?),
+                "y" => add_months(today, i32::try_from(n).ok()?.checked_mul(12)?),
                 _ => return None,
             };
             return Some((d, 1));

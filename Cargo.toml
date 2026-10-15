@@ -1,6 +1,6 @@
 [package]
 name = "ctui"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Minimal terminal calendar and task list, as a TUI and a CLI"
 license = "MIT"

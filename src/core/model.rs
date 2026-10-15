@@ -90,7 +90,7 @@ impl Fields {
             .or_else(|| c.get("X-APPLE-SORT-ORDER"))
             .and_then(|p| p.value.trim().parse().ok());
         Self {
-            title: c.text("SUMMARY").unwrap_or_default(),
+            title: printable(&c.text("SUMMARY").unwrap_or_default()),
             start: if kind == Kind::Event { start } else { None },
             end: if kind == Kind::Event { end } else { None },
             due: if kind == Kind::Task {
@@ -216,6 +216,19 @@ impl Fields {
     pub fn all_day(&self) -> bool {
         self.start.is_some_and(|s| s.is_date())
     }
+}
+
+/// Text safe to print: control characters (terminal escapes, newlines) and
+/// bidirectional overrides become spaces. Titles come from other people's
+/// calendars, and an escape sequence in one could rewrite the terminal.
+pub fn printable(s: &str) -> String {
+    let bad =
+        |c: char| c.is_control() || matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+    if !s.chars().any(bad) {
+        return s.to_string();
+    }
+    let out: String = s.chars().map(|c| if bad(c) { ' ' } else { c }).collect();
+    out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn add(m: Moment, d: Duration) -> Moment {
@@ -563,6 +576,18 @@ mod tests {
         .unwrap();
         assert!(done.f.done);
         assert!(done.f.completed.is_some());
+    }
+
+    #[test]
+    fn titles_are_printable() {
+        let text = "BEGIN:VCALENDAR\r\nBEGIN:VTODO\r\nUID:x\r\nSUMMARY:pay \u{1b}]52;c;cm0gLXJm\u{7}rent\\nnow \u{202e}evil\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
+        let mut it =
+            Item::from_calendar(ical::parse(text).unwrap().remove(0), "l", "x.ics").unwrap();
+        assert_eq!(it.f.title, "pay ]52;c;cm0gLXJm rent now evil");
+        // Reading cleans the copy shown; the file isn't rewritten for it.
+        let before = it.to_ics();
+        it.sync(now());
+        assert_eq!(it.to_ics(), before);
     }
 
     #[test]

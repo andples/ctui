@@ -84,7 +84,9 @@ impl Store {
                     .filter(|s| !s.is_empty())
             };
             lists.push(List {
-                name: read_meta("displayname").unwrap_or_else(|| id.clone()),
+                name: super::model::printable(
+                    &read_meta("displayname").unwrap_or_else(|| id.clone()),
+                ),
                 color: read_meta("color").and_then(|c| normalize_color(&c)),
                 id: id.clone(),
             });
@@ -308,6 +310,19 @@ impl Store {
     /// Reverts or re-applies a journal step. Refuses when a file changed
     /// since, so undo never clobbers an edit made elsewhere.
     pub fn replay(&mut self, files: &[FileChange], undo: bool) -> Result<()> {
+        // The journal is a file in the state dir: never let it point outside the data dir.
+        for fc in files {
+            let p = std::path::Path::new(&fc.path);
+            let inside = p
+                .components()
+                .all(|c| matches!(c, std::path::Component::Normal(_)));
+            if !inside || p.components().count() != 2 {
+                bail!(
+                    "the undo history names {:?}, which isn't a list file; not touching it",
+                    fc.path
+                );
+            }
+        }
         for fc in files {
             let expect = if undo { &fc.after } else { &fc.before };
             if self.read_rel(&fc.path) != *expect {
@@ -470,6 +485,25 @@ mod tests {
         fs::write(dir.join("data/p").join(&it.file), "changed").unwrap();
         assert!(j.undo(&mut s).is_err());
         assert!(s.changed_on_disk());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn undo_history_cant_escape_the_data_dir() {
+        let dir = temp("store4");
+        let mut s = Store::open(&dir.join("data"), None).unwrap();
+        for path in ["../evil", "/etc/passwd", "a/../../b", "deep/er/x"] {
+            let fc = FileChange {
+                path: path.into(),
+                before: None,
+                after: Some("x".into()),
+            };
+            assert!(
+                s.replay(std::slice::from_ref(&fc), false).is_err(),
+                "{path}"
+            );
+        }
+        assert!(!dir.join("evil").exists());
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -1,0 +1,68 @@
+# Builds ctui for each platform when a `v*` tag is pushed and attaches the
+# binaries to that tag's GitHub release (created by scripts/release.sh).
+# The Homebrew formula downloads these, so installs don't need Rust.
+# Running it by hand (workflow_dispatch) builds everything without
+# publishing, as a check.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          # musl: fully static, runs on any distro.
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Smoke test
+        run: target/${{ matrix.target }}/release/ctui --version
+        if: matrix.target != 'x86_64-apple-darwin'
+
+      # The binary is MIT. The Monkeytype themes ride along as separate
+      # GPL-3.0 files (with their license) that ctui loads at run time from
+      # share/ctui/themes; the formula installs them there.
+      - name: Package
+        run: |
+          name=ctui-${{ matrix.target }}
+          mkdir -p "$name/themes"
+          cp "target/${{ matrix.target }}/release/ctui" README.md LICENSE "$name/"
+          cp themes/*.toml themes/*.md themes/LICENSE-GPL-3.0.txt "$name/themes/"
+          tar czf "$name.tar.gz" "$name"
+          shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
+
+      - name: Upload to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # scripts/release.sh creates the release right after pushing the
+          # tag; wait for it rather than racing it.
+          for _ in $(seq 60); do
+            gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break
+            sleep 10
+          done
+          gh release upload "$GITHUB_REF_NAME" ctui-${{ matrix.target }}.tar.gz* --clobber

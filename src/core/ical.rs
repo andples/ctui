@@ -212,6 +212,8 @@ fn parse_line(line: &str) -> Result<Prop> {
     })
 }
 
+const MAX_DEPTH: usize = 16;
+
 /// Parses every top-level component in `text` (usually one `VCALENDAR`).
 pub fn parse(text: &str) -> Result<Vec<Component>> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -225,7 +227,13 @@ pub fn parse(text: &str) -> Result<Vec<Component>> {
             Err(e) => return Err(e),
         };
         match prop.name.as_str() {
-            "BEGIN" => stack.push(Component::new(prop.value.trim())),
+            "BEGIN" => {
+                // Real calendars nest 3 deep; refuse files built to exhaust the stack.
+                if stack.len() >= MAX_DEPTH {
+                    bail!("components nested more than {MAX_DEPTH} deep");
+                }
+                stack.push(Component::new(prop.value.trim()))
+            }
             "END" => {
                 let Some(done) = stack.pop() else {
                     bail!("END:{} without BEGIN", prop.value)

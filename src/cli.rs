@@ -170,6 +170,9 @@ pub enum McpCmd {
         /// Don't write the skill file (claude only).
         #[arg(long)]
         no_skill: bool,
+        /// Replace a skill file you've edited.
+        #[arg(long)]
+        force: bool,
     },
     /// Print the skill file that teaches an agent to use ctui well
     Skill,
@@ -256,7 +259,9 @@ pub fn moment_key(m: &Moment) -> String {
 }
 
 pub fn moment_from_key(s: &str) -> Option<Moment> {
-    let (kind, rest) = s.split_at(1);
+    // `get` rather than `split_at`: this comes from agents and state files.
+    let kind = s.get(..1)?;
+    let rest = &s[1..];
     match kind {
         "D" => NaiveDate::parse_from_str(rest, "%Y%m%d")
             .ok()
@@ -772,12 +777,18 @@ fn split_force(text: &[String]) -> (Option<Kind>, String) {
 
 fn notify(title: &str, body: &str) {
     #[cfg(target_os = "macos")]
+    // Title and body go in as arguments, never spliced into the script.
     let _ = std::process::Command::new("osascript")
-        .arg("-e")
-        .arg(format!(
-            "display notification {:?} with title {:?}",
-            body, title
-        ))
+        .args([
+            "-e",
+            "on run argv",
+            "-e",
+            "display notification (item 2 of argv) with title (item 1 of argv)",
+            "-e",
+            "end run",
+            title,
+            body,
+        ])
         .status();
     #[cfg(not(target_os = "macos"))]
     let _ = std::process::Command::new("notify-send")
@@ -1020,9 +1031,11 @@ pub fn run(s: &mut Session, cmd: Cmd, out: &mut Out, interactive: bool) -> Resul
                     crate::mcp::serve(s, stdin.lock(), out.w)?;
                 }
                 None => bail!("the MCP server runs as `ctui mcp`, started by your agent"),
-                Some(McpCmd::Install { target, no_skill }) => {
-                    crate::mcp::install(&target, !no_skill, out.w)?
-                }
+                Some(McpCmd::Install {
+                    target,
+                    no_skill,
+                    force,
+                }) => crate::mcp::install(&target, !no_skill, force, out.w)?,
                 Some(McpCmd::Skill) => write!(out.w, "{}", crate::mcp::SKILL)?,
             }
         }
