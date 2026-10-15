@@ -3,8 +3,13 @@
 Minimal terminal calendar + task list in Rust (ratatui + crossterm + clap). Binary `ctui`
 (users alias `ct`). The plan, decisions and milestones are in `DESIGN.md` (§12 has the
 source layout): read it first and keep it current when a decision changes. The repo is
-private; ctui is MIT and published on crates.io (0.1.0, 2026-10-16). Releases need the owner's
-explicit go-ahead.
+public; ctui is MIT, on crates.io and in the Homebrew tap andples/homebrew-ctui (clone it at
+../homebrew-ctui). Releases need the owner's explicit go-ahead.
+
+Releasing: `scripts/release.sh patch|minor|major` (pipe `y` to its prompt) bumps the version, tags,
+creates the GitHub release, waits for `.github/workflows/release.yml` to attach the four binaries
+(with the Monkeytype themes as separate GPL files) and rewrites `Formula/ctui.rb` in the tap.
+crates.io is separate: `cargo publish`.
 
 Rules that override convenience:
 - Usability first, no bloat (DESIGN.md §1, §15). A new dependency or feature must justify itself.

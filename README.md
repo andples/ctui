@@ -22,10 +22,23 @@ ct                                  # the TUI
 
 ## Install
 
+Homebrew (macOS and Linux, prebuilt, all 39 themes):
+
 ```sh
-cargo install ctui                  # from crates.io
+brew tap andples/ctui
+brew trust andples/ctui             # Homebrew 6+ refuses untrusted taps without this
+brew install ctui
+```
+
+With Rust:
+
+```sh
+cargo install ctui                  # from crates.io (the 14 MIT themes)
 cargo install --path .              # from a clone of this repo
 ```
+
+Prebuilt binaries for macOS (arm64, x86_64) and Linux (static musl, arm64,
+x86_64) are attached to every [GitHub release](https://github.com/andples/ctui/releases).
 
 `ctui` is the binary. Get `ct` from the shortcuts below rather than
 installing a `ct` binary: Arch's `ct` package (the Flatcar config
