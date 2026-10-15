@@ -651,10 +651,38 @@ Added 2026-10-16 at the owner's request; all decisions below are theirs.
 
 ---
 
-## 16. Non-goals
+## 16. Future plans (parked)
 
-- Two-way sync with Google or any account system (use vdirsyncer if you need
-  CalDAV).
+Parked on 2026-10-16. The owner's rule for everything here: **a companion
+app is not bloat as long as the main ctui isn't harmed.** That means it lives
+in its own repo (or its own crate), talks to ctui only through the vdir files,
+CalDAV, the CLI's `--json` or MCP, and adds no dependency, setting or code
+path to the ctui binary. If something here would need a change in ctui
+itself, that change has to stand on its own merits.
+
+1. **Verify sync, then document it (do first).** Run Radicale + vdirsyncer
+   locally and check ctui's files round-trip cleanly: timezones (ctui writes
+   IANA `TZID`s without VTIMEZONE blocks), list names and colours (metasync),
+   repeating events with overrides, tasks with subtasks. Fix what breaks, then
+   write a "Sync with your phone" guide. Maybe a `ct sync` shortcut that runs
+   vdirsyncer (only if it stays a thin wrapper).
+2. **Phone, the cheap way.** A CalDAV server (Radicale self-hosted, or
+   Fastmail), with the phone's own Calendar and Reminders apps (iOS: a CalDAV
+   account; Android: DAVx⁵ + Tasks.org). Note that iCloud can't carry tasks:
+   upgraded Reminders aren't reachable over CalDAV.
+3. **A ctui phone app** (Swift, like upomo) if the built-in apps aren't good
+   enough. It would talk CalDAV to the same server and use the same quick-add
+   grammar idea, with no backend of its own.
+4. **A web app/site.** Either a landing page for ctui, or a web client over
+   the same CalDAV server. Same rule: a separate project, no server-side state
+   that ctui depends on.
+
+---
+
+## 17. Non-goals
+
+- Two-way sync with Google, or sync code inside ctui (CalDAV sync is
+  vdirsyncer's job; companion apps are §16, outside the binary).
 - A background daemon or tray icon.
 - Plugins or a scripting language. The CLI and `--json` are the extension
   points.
@@ -665,7 +693,7 @@ Added 2026-10-16 at the owner's request; all decisions below are theirs.
 
 ---
 
-## 17. Open questions
+## 18. Open questions
 
 1. ~~License~~: **MIT** (owner, 2026-10-16). The Monkeytype themes are never
    compiled in or put in the crate; they load from a themes folder at run time.
