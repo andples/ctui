@@ -12,7 +12,7 @@ creates the GitHub release, waits for `.github/workflows/release.yml` to attach 
 crates.io is separate: `cargo publish`.
 
 Rules that override convenience:
-- Usability first, no bloat (DESIGN.md §1, §15). A new dependency or feature must justify itself.
+- Usability first, no bloat (DESIGN.md §1, §17); companion apps are fine outside the binary (§16). A new dependency or feature must justify itself.
 - One quick-add grammar (`src/core/parse.rs`) shared by CLI, TUI add bar, edit, move and `g`.
 - Every data change goes through `core::ops` → `Store::commit` (writes files + undo entry).
 - TUI state changes go through `App::dispatch(Action)` / `App::input_key`; `view.rs` only draws.
