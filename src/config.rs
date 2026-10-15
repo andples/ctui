@@ -96,6 +96,26 @@ pub struct Config {
     pub default_reminder: BTreeMap<String, String>,
     /// Action name → keys, replacing that action's defaults.
     pub keys: BTreeMap<String, Vec<String>>,
+    /// Agents (MCP). `enabled = false` turns all of it off.
+    pub ai: Ai,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Ai {
+    /// The kill switch: `false` and `ctui mcp` refuses to run, nothing is installed.
+    pub enabled: bool,
+    /// `false` gives agents the read tools only.
+    pub write: bool,
+}
+
+impl Default for Ai {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            write: true,
+        }
+    }
 }
 
 impl Default for Config {
@@ -117,6 +137,7 @@ impl Default for Config {
             list_slots: BTreeMap::new(),
             default_reminder: BTreeMap::new(),
             keys: BTreeMap::new(),
+            ai: Ai::default(),
         }
     }
 }
@@ -183,6 +204,10 @@ impl Config {
             Err(_) => toml::Table::new(),
         };
         let parsed = parse_value(key, value)?;
+        // `ai.write` and friends live in a sub-table.
+        if let Some((outer, inner)) = key.split_once('.') {
+            return self.set_in_table(path, outer, inner, Some(parsed));
+        }
         let mut probe = toml::Table::try_from(&*self)?;
         probe.insert(key.to_string(), parsed.clone());
         let updated: Config = toml::Value::Table(probe)
@@ -262,6 +287,11 @@ pub const SETTINGS: &[(&str, &str)] = &[
     ("mouse", "true | false"),
     ("data_dir", "where the lists live"),
     ("list_colors", "file | theme"),
+    (
+        "ai.enabled",
+        "agents (MCP) at all: false turns everything off",
+    ),
+    ("ai.write", "agents may change things: false is read-only"),
 ];
 
 fn parse_value(key: &str, value: &str) -> Result<toml::Value> {
@@ -272,10 +302,10 @@ fn parse_value(key: &str, value: &str) -> Result<toml::Value> {
                 .parse()
                 .with_context(|| format!("{key} takes a number"))?,
         ),
-        "mouse" => toml::Value::Boolean(match value {
+        "mouse" | "ai.enabled" | "ai.write" => toml::Value::Boolean(match value {
             "true" | "on" | "yes" => true,
             "false" | "off" | "no" => false,
-            _ => bail!("mouse takes true or false"),
+            _ => bail!("{key} takes true or false"),
         }),
         "views" => toml::Value::Array(
             value
@@ -405,6 +435,10 @@ mod tests {
         assert!(c.set(&path, "time_format", "13h").is_err());
         assert!(c.set(&path, "nope", "1").is_err());
         assert_eq!(Config::load(&path).unwrap().time_format, TimeFormat::H24);
+        c.set(&path, "ai.write", "off").unwrap();
+        assert!(!c.ai.write && c.ai.enabled);
+        assert!(fs::read_to_string(&path).unwrap().contains("[ai]"));
+        assert!(!Config::load(&path).unwrap().ai.write);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

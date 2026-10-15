@@ -12,6 +12,9 @@ Rules that override convenience:
 - TUI state changes go through `App::dispatch(Action)` / `App::input_key`; `view.rs` only draws.
 - Time-dependent code takes `now` as an argument (`Env`, `Opts`); `CTUI_NOW` fixes it for tests.
 - `.ics` writes must keep unknown properties: `Fields::write` writes only fields that changed.
+- MCP (`src/mcp.rs`) takes structured fields that must map onto `parse::Draft`; `apply_fields`
+  destructures `Draft` exhaustively on purpose, so a new grammar field needs MCP support too
+  (and a row in `ITEM_FIELDS` plus a case in the grammar-vs-fields test).
 - The Monkeytype themes (GPL-3.0) are never compiled in by default (`monkeytype-themes` feature).
 
 Commands: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt`,

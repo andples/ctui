@@ -1624,7 +1624,7 @@ pub fn command_names() -> Vec<String> {
             std::iter::once(c.get_name().to_string())
                 .chain(c.get_visible_aliases().map(str::to_string))
         })
-        .filter(|n| n != "completions" && n != "init")
+        .filter(|n| n != "completions" && n != "init" && n != "mcp")
         .collect();
     v.extend(["quit", "help", "month", "tasks"].map(String::from));
     v.extend(

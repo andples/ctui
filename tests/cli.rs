@@ -319,3 +319,88 @@ fn search_finds_everything_and_numbers_it() {
     assert_eq!(s.run(&["search", "cheese"]).status.code(), Some(1));
     assert_eq!(s.ok(&["search", "cheese", "--json"]).trim(), "[]");
 }
+
+#[test]
+fn mcp_over_stdio_and_the_kill_switch() {
+    use std::io::Write;
+    let s = Sandbox::new("mcp");
+    let run_mcp = |input: &str| {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_ctui"))
+            .arg("--config-dir")
+            .arg(s.0.join("c"))
+            .arg("--data-dir")
+            .arg(s.0.join("d"))
+            .arg("--state-dir")
+            .arg(s.0.join("s"))
+            .arg("mcp")
+            .env("CTUI_NOW", "2026-10-15T12:00:00+01:00")
+            .env("TZ", "Europe/London")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    };
+    let o = run_mcp(concat!(
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#,
+        "\n",
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"add","arguments":{"title":"from an agent","date":"2026-10-16"}}}"#,
+        "\n"
+    ));
+    assert!(o.status.success());
+    let out = String::from_utf8(o.stdout).unwrap();
+    assert_eq!(out.lines().count(), 2, "{out}");
+    assert!(out.contains("added task from an agent"), "{out}");
+    assert!(
+        s.ok(&["ls", "all"]).contains("from an agent"),
+        "the CLI sees the agent's task"
+    );
+    s.ok(&["set", "ai.enabled", "false"]);
+    let o = run_mcp("");
+    assert_eq!(o.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("agents are turned off"));
+    assert_eq!(s.run(&["mcp", "skill"]).status.code(), Some(1));
+}
+
+#[cfg(unix)]
+#[test]
+fn mcp_install_claude_runs_claude_and_writes_the_skill() {
+    use std::os::unix::fs::PermissionsExt;
+    let s = Sandbox::new("install");
+    let bin = s.0.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let log = s.0.join("claude.log");
+    std::fs::write(
+        bin.join("claude"),
+        format!("#!/bin/sh\necho \"$@\" > '{}'\n", log.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(bin.join("claude"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_ctui"))
+        .args(["--config-dir"])
+        .arg(s.0.join("c"))
+        .arg("--data-dir")
+        .arg(s.0.join("d"))
+        .arg("--state-dir")
+        .arg(s.0.join("s"))
+        .args(["mcp", "install", "claude"])
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .env("HOME", &s.0)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let called = std::fs::read_to_string(&log).unwrap();
+    assert!(
+        called.starts_with("mcp add --scope user ctui -- /") && called.trim_end().ends_with(" mcp"),
+        "{called}"
+    );
+    let skill = std::fs::read_to_string(s.0.join(".claude/skills/ctui/SKILL.md")).unwrap();
+    assert!(skill.starts_with("---\nname: ctui"));
+}

@@ -8,7 +8,7 @@ over once with `ct import`.
 
 Status (2026-10-15): M0–M8 are built, and M9's checks pass (first frame
 21 ms and a 5.8 MB binary with 2,000 items). The public release waits for
-the license decision (§16). Where the build differs from this plan, the
+the license decision (§17). Where the build differs from this plan, the
 plan was updated.
 
 ---
@@ -501,7 +501,7 @@ lists = ["#88c0d0", "#a3be8c", "#d08770", "#b48ead", "#ebcb8b", "#81a1c1"]
     list and mapping in `themes/MONKEYTYPE.md`. Monkeytype has no list
     colours, so those are derived from each theme's `main` (OKLCH hue steps,
     at least 3:1 contrast on `bg`).
-- **Built in or not** depends on the license (§16): see the open question.
+- **Built in or not** depends on the license (§17): see the open question.
 
 ---
 
@@ -540,6 +540,7 @@ src/
     recur.rs       expansion (rrule crate), overrides, next due, describe()
     import.rs      ics / folders / zip / Tasks.json → plan → apply; export
     remind.rs      alarms due in a window, last-run state
+  mcp.rs           the MCP server: tools, fields → Draft, install, skill
   cli.rs           subcommands → core::ops; text and --json output
   session.rs       paths + config + store + journal + theme, shared by both
   shortcuts.rs     `ctui init`: the page shortcut rule and the bash/zsh/fish snippets
@@ -619,7 +620,38 @@ list.
 
 ---
 
-## 15. Non-goals
+## 15. Agents (MCP)
+
+Added 2026-10-16 at the owner's request; all decisions below are theirs.
+
+- `ctui mcp` serves MCP over stdio (hand-written JSON-RPC on `serde_json`, no
+  new dependency). Tools: `today`, `search`, `tasks`, `month`, `get`, `lists`;
+  with writing on, `add`, `edit`, `done`, `move`, `delete`, `undo`, `redo`.
+  Items are addressed by id (and `occurrence` for one occurrence of a repeating
+  event).
+- **Agents are treated like a person:** same ops, same undo history, no
+  agent labels or special toasts.
+- **Structured fields, not grammar text** (owner's option B). `mcp::apply_fields`
+  turns fields into a `parse::Draft` and calls `ops::add_draft` /
+  `ops::edit_draft`, the same backend the grammar uses. **Sync check:**
+  `apply_fields` destructures `Draft` exhaustively, so adding a grammar field
+  breaks the build until MCP handles it; tests assert that fields and the
+  equivalent grammar text create identical items, that the schema lists exactly
+  the fields accepted, and that `ops::draft_from_item` → `edit_draft` changes
+  nothing.
+- **Settings:** `[ai] enabled` (the kill switch: everything refuses to run) and
+  `[ai] write` (read-only when false), both default true, read on every request
+  so they apply to a running server.
+- **Setup:** `ctui mcp install claude` runs `claude mcp add --scope user` and
+  writes the skill (`agents/SKILL.md`, compiled in) to
+  `~/.claude/skills/ctui/`; `codex` and `json` print config to paste.
+  `ctui mcp skill` prints the skill.
+- Not done (no-bloat): notifications/subscriptions for agents that watch the
+  calendar, and setting a parent (subtasks) from MCP.
+
+---
+
+## 16. Non-goals
 
 - Two-way sync with Google or any account system (use vdirsyncer if you need
   CalDAV).
@@ -633,7 +665,7 @@ list.
 
 ---
 
-## 16. Open questions
+## 17. Open questions
 
 1. **License** (undecided; the repo stays private until then). This also
    decides how the Monkeytype themes ship. They're GPL-3.0, and compiling

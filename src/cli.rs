@@ -151,10 +151,28 @@ pub enum Cmd {
         key: Option<String>,
         value: Vec<String>,
     },
+    /// For agents: run the MCP server (stdio), or `install claude|codex|json`, or print the `skill`
+    Mcp {
+        #[command(subcommand)]
+        action: Option<McpCmd>,
+    },
     /// Print shell completions: ct completions zsh
     Completions { shell: clap_complete::Shell },
     /// Print shortcuts (ct, ctt, ctm, cttasks) for your rc file: eval "$(ctui init zsh)"
     Init { shell: crate::shortcuts::Shell },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum McpCmd {
+    /// Register ctui with an agent: claude (runs `claude mcp add` and adds the skill), codex, json
+    Install {
+        target: String,
+        /// Don't write the skill file (claude only).
+        #[arg(long)]
+        no_skill: bool,
+    },
+    /// Print the skill file that teaches an agent to use ctui well
+    Skill,
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -224,7 +242,8 @@ struct RefEntry {
     rid: Option<String>,
 }
 
-fn moment_key(m: &Moment) -> String {
+/// An occurrence as a string that round-trips (`Z<zone>|<local time>`, `D<date>`…).
+pub fn moment_key(m: &Moment) -> String {
     match m {
         Moment::Date(d) => format!("D{}", d.format("%Y%m%d")),
         Moment::Floating(n) => format!("F{}", n.format("%Y%m%dT%H%M%S")),
@@ -236,7 +255,7 @@ fn moment_key(m: &Moment) -> String {
     }
 }
 
-fn moment_from_key(s: &str) -> Option<Moment> {
+pub fn moment_from_key(s: &str) -> Option<Moment> {
     let (kind, rest) = s.split_at(1);
     match kind {
         "D" => NaiveDate::parse_from_str(rest, "%Y%m%d")
@@ -964,8 +983,9 @@ pub fn run(s: &mut Session, cmd: Cmd, out: &mut Out, interactive: bool) -> Resul
             None => {
                 let table = toml::Table::try_from(&s.cfg)?;
                 for (k, about) in SETTINGS {
-                    let v = table
-                        .get(*k)
+                    let v = k
+                        .split('.')
+                        .try_fold(&toml::Value::Table(table.clone()), |v, part| v.get(part))
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "(unset)".into());
                     out.line(&format!(
@@ -988,6 +1008,24 @@ pub fn run(s: &mut Session, cmd: Cmd, out: &mut Out, interactive: bool) -> Resul
                 out.line(&format!("{k} · {}", value.join(" ")))?;
             }
         },
+        Cmd::Mcp { action } => {
+            if !s.cfg.ai.enabled {
+                bail!(
+                    "agents are turned off (ai.enabled = false in config.toml; ct set ai.enabled true turns them on)"
+                );
+            }
+            match action {
+                None if interactive => {
+                    let stdin = std::io::stdin();
+                    crate::mcp::serve(s, stdin.lock(), out.w)?;
+                }
+                None => bail!("the MCP server runs as `ctui mcp`, started by your agent"),
+                Some(McpCmd::Install { target, no_skill }) => {
+                    crate::mcp::install(&target, !no_skill, out.w)?
+                }
+                Some(McpCmd::Skill) => write!(out.w, "{}", crate::mcp::SKILL)?,
+            }
+        }
         Cmd::Completions { shell } => {
             clap_complete::generate(shell, &mut Cli::command(), "ctui", out.w);
         }

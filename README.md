@@ -268,6 +268,45 @@ run time rather than compiled in: packages install them to
 `share/ctui/themes/`, and a build from this repo finds `themes/` next to it.
 `cargo build --features monkeytype-themes` compiles them in.
 
+## Agents (MCP)
+
+`ctui mcp` is an [MCP](https://modelcontextprotocol.io) server, so AI agents
+(Claude Code, Codex, Cursor…) can read and change your calendar. They use the
+same code as you do: their changes show up in an open TUI within two seconds,
+land in the same undo history (`u` undoes an agent's change like your own),
+and aren't labelled any differently.
+
+```sh
+ctui mcp install claude     # runs `claude mcp add`, and installs the ctui skill
+ctui mcp install codex      # prints the lines for ~/.codex/config.toml
+ctui mcp install json       # prints the mcpServers JSON most other agents use
+ctui mcp skill              # prints the skill (how to use ctui well) on its own
+```
+
+**Tools:** `today`, `search`, `tasks`, `month`, `get`, `lists` (reading) and
+`add`, `edit`, `done`, `move`, `delete`, `undo`, `redo` (changing). Items are
+addressed by their stable ids, never by list numbers.
+
+Agents don't send grammar text: `add` and `edit` take separate fields
+(`title`, `date` YYYY-MM-DD, `start`/`end` HH:MM, `duration_minutes`,
+`all_day`, `end_date`, `list`, `priority`, `repeat`, `remind_minutes`,
+`kind`), so a title like "the 3pm problem" stays a title. The fields become
+the same draft the grammar produces and go through the same code; the build
+fails if the two ever drift apart, and tests check that fields and the
+equivalent grammar text make identical items. Every write replies with what
+was saved, so the agent can check it.
+
+**Turning it down or off** (also `ct set ai.write false` or `:set` in the TUI):
+
+```toml
+[ai]
+enabled = true   # false turns everything off: `ctui mcp` and `ctui mcp install` refuse to run
+write   = true   # false leaves agents the reading tools only
+```
+
+Agents without MCP (scripts, cron jobs) can use the CLI: every read command
+takes `--json` and exit codes mean something (see Scripting).
+
 ## Scripting
 
 Every read command takes `--json` (`ct ls --json`, `ct today --json`,

@@ -688,47 +688,7 @@ impl Parser<'_, '_> {
     }
 
     fn pick_list(&self, name: &str) -> ListPick {
-        if let Some(id) = name.strip_suffix('!') {
-            if let Some(l) = self
-                .ctx
-                .lists
-                .iter()
-                .find(|l| l.id.eq_ignore_ascii_case(id))
-            {
-                return ListPick::Existing(l.id.clone());
-            }
-            return ListPick::Create(id.to_string());
-        }
-        let n = name.to_lowercase();
-        let lists = self.ctx.lists;
-        if let Some(l) = lists
-            .iter()
-            .find(|l| l.id.to_lowercase() == n || l.name.to_lowercase() == n)
-        {
-            return ListPick::Existing(l.id.clone());
-        }
-        let prefix: Vec<&List> = lists
-            .iter()
-            .filter(|l| {
-                l.id.to_lowercase().starts_with(&n) || l.name.to_lowercase().starts_with(&n)
-            })
-            .collect();
-        let pool: Vec<&List> = if prefix.is_empty() {
-            lists
-                .iter()
-                .filter(|l| subsequence(&n, &l.id.to_lowercase()))
-                .collect()
-        } else {
-            prefix
-        };
-        match pool.as_slice() {
-            [one] => ListPick::Existing(one.id.clone()),
-            [] => ListPick::Unknown(name.to_string()),
-            many => ListPick::Ambiguous(
-                name.to_string(),
-                many.iter().map(|l| l.id.clone()).collect(),
-            ),
-        }
+        pick_list(name, self.ctx.lists)
     }
 
     fn mark(&mut self, i: usize, n: usize, role: Role) {
@@ -843,6 +803,44 @@ impl Parser<'_, '_> {
             return 1;
         }
         0
+    }
+}
+
+/// Which list a name means: exact id or name, then a unique prefix, then a
+/// unique subsequence. `name!` creates it. Shared by the grammar and MCP.
+pub fn pick_list(name: &str, lists: &[List]) -> ListPick {
+    if let Some(id) = name.strip_suffix('!') {
+        if let Some(l) = lists.iter().find(|l| l.id.eq_ignore_ascii_case(id)) {
+            return ListPick::Existing(l.id.clone());
+        }
+        return ListPick::Create(id.to_string());
+    }
+    let n = name.to_lowercase();
+    if let Some(l) = lists
+        .iter()
+        .find(|l| l.id.to_lowercase() == n || l.name.to_lowercase() == n)
+    {
+        return ListPick::Existing(l.id.clone());
+    }
+    let prefix: Vec<&List> = lists
+        .iter()
+        .filter(|l| l.id.to_lowercase().starts_with(&n) || l.name.to_lowercase().starts_with(&n))
+        .collect();
+    let pool: Vec<&List> = if prefix.is_empty() {
+        lists
+            .iter()
+            .filter(|l| subsequence(&n, &l.id.to_lowercase()))
+            .collect()
+    } else {
+        prefix
+    };
+    match pool.as_slice() {
+        [one] => ListPick::Existing(one.id.clone()),
+        [] => ListPick::Unknown(name.to_string()),
+        many => ListPick::Ambiguous(
+            name.to_string(),
+            many.iter().map(|l| l.id.clone()).collect(),
+        ),
     }
 }
 

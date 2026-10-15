@@ -196,6 +196,18 @@ pub fn add(
 ) -> Result<Done> {
     let lists = store.lists.clone();
     let draft = parse::parse(text, &env.ctx(&lists));
+    add_draft(store, journal, env, &draft, force, defaults)
+}
+
+/// Adds an item from a draft: what the grammar or MCP's fields produced.
+pub fn add_draft(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    draft: &Draft,
+    force: Option<Kind>,
+    defaults: &Defaults,
+) -> Result<Done> {
     if draft.title.trim().is_empty() {
         bail!("nothing to add: give it a title");
     }
@@ -203,9 +215,9 @@ pub fn add(
         .list
         .clone()
         .unwrap_or_else(|| env.cfg.default_list.clone());
-    let (list, create) = resolve_list(store, &draft, &fallback, &env.cfg.default_list)?;
-    let kind = kind_for(&draft, force, None);
-    let mut f = fields_from(&draft, kind, None, defaults, env);
+    let (list, create) = resolve_list(store, draft, &fallback, &env.cfg.default_list)?;
+    let kind = kind_for(draft, force, None);
+    let mut f = fields_from(draft, kind, None, defaults, env);
     if f.alarms.is_empty() {
         let timed = f.start.is_some_and(|s| !s.is_date()) || f.due.is_some_and(|d| !d.is_date());
         if timed {
@@ -355,6 +367,80 @@ pub fn to_grammar(item: &Item, rid: Rid, env: &Env) -> String {
     out.join(" ")
 }
 
+/// The draft that recreates an item exactly (the structured twin of
+/// [`to_grammar`]): `edit_draft` with it changes nothing.
+pub fn draft_from_item(item: &Item, rid: Rid, env: &Env) -> Draft {
+    let tz = env.tz;
+    let (f, start, end) = occurrence_fields(item, rid, env);
+    let mut d = Draft {
+        title: f.title.clone(),
+        list: Some(ListPick::Existing(item.list.clone())),
+        priority: (f.priority > 0).then_some(f.priority),
+        repeat: if rid.is_none() {
+            item.f.rrule.clone().map(Repeat::Rule)
+        } else {
+            None
+        },
+        remind: f.alarms.first().copied(),
+        ..Draft::default()
+    };
+    match item.kind {
+        Kind::Task => {
+            d.date = f.due.map(|m| m.date(tz));
+            d.time = f.due.and_then(|m| m.time(tz));
+        }
+        Kind::Event => {
+            if let Some(s) = start {
+                let day = s.date(tz);
+                d.date = Some(day);
+                if s.is_date() {
+                    d.allday = true;
+                    d.end_date = end
+                        .map(|e| e.date(tz) - Duration::days(1))
+                        .filter(|l| *l > day);
+                } else {
+                    let st = s.time(tz).expect("timed");
+                    d.time = Some(st);
+                    match end {
+                        Some(e) if e.date(tz) == day && e.time(tz).is_some_and(|et| et > st) => {
+                            d.end_time = e.time(tz)
+                        }
+                        Some(e) => {
+                            let len = e.instant(tz) - s.instant(tz);
+                            d.length = Some(if len > Duration::zero() {
+                                len
+                            } else {
+                                Duration::hours(1)
+                            });
+                        }
+                        None => d.length = Some(Duration::hours(1)),
+                    }
+                }
+            }
+        }
+    }
+    d
+}
+
+/// The fields, start and end to show for an item or one occurrence.
+fn occurrence_fields(item: &Item, rid: Rid, env: &Env) -> (Fields, Option<Moment>, Option<Moment>) {
+    let tz = env.tz;
+    if let (Some(r), Kind::Event) = (rid, item.kind) {
+        let occ = recur::occurrences(
+            item,
+            r.date(tz) - Duration::days(1),
+            r.date(tz) + Duration::days(2),
+            tz,
+        )
+        .into_iter()
+        .find(|o| o.rid == Some(r));
+        if let Some(o) = occ {
+            return (o.f.clone(), Some(o.start), o.end);
+        }
+    }
+    (item.f.clone(), item.f.start, item.f.end)
+}
+
 /// Quotes title words the grammar would otherwise read as tokens.
 fn quote_title(title: &str) -> String {
     let probe_lists: [List; 0] = [];
@@ -383,12 +469,26 @@ pub fn edit(
 ) -> Result<Done> {
     let lists = store.lists.clone();
     let draft = parse::parse(text, &env.ctx(&lists));
+    edit_draft(store, journal, env, uid, rid, &draft, None)
+}
+
+/// Applies a draft to an item (all of it, or one occurrence with `rid`).
+/// `force` turns a task into an event or back; `None` keeps the edit rules.
+pub fn edit_draft(
+    store: &mut Store,
+    journal: &mut Journal,
+    env: &Env,
+    uid: &str,
+    rid: Rid,
+    draft: &Draft,
+    force: Option<Kind>,
+) -> Result<Done> {
     if draft.title.trim().is_empty() {
         bail!("an item needs a title");
     }
     let mut item = get(store, uid)?;
-    let (list, create) = resolve_list(store, &draft, &item.list, &env.cfg.default_list)?;
-    let kind = kind_for(&draft, None, Some(item.kind));
+    let (list, create) = resolve_list(store, draft, &item.list, &env.cfg.default_list)?;
+    let kind = kind_for(draft, force, Some(item.kind));
     let defaults = Defaults::default();
     if let (Some(r), Kind::Event) = (rid, item.kind) {
         // Only this occurrence: an override at its RECURRENCE-ID.
@@ -407,7 +507,7 @@ pub fn edit(
             base.start = Some(r);
             base.end = len.map(|l| shift(r, l));
         }
-        let mut f = fields_from(&draft, Kind::Event, Some(&base), &defaults, env);
+        let mut f = fields_from(draft, Kind::Event, Some(&base), &defaults, env);
         f.rrule = None;
         item.overrides.retain(|(x, _)| *x != r);
         item.overrides.push((r, f));
@@ -419,7 +519,7 @@ pub fn edit(
     if kind != item.kind {
         item = convert(item, kind);
     }
-    item.f = fields_from(&draft, kind, Some(&item.f), &defaults, env);
+    item.f = fields_from(draft, kind, Some(&item.f), &defaults, env);
     item.list = list;
     item.sync(env.now);
     let summary = draft_summary(&item, env);
