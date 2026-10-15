@@ -56,7 +56,7 @@ pub enum InputKind {
     Edit { uid: String, rid: Rid },
     Move { uid: String, rid: Rid },
     Goto,
-    Filter,
+    Search,
     Command,
 }
 
@@ -131,6 +131,19 @@ pub enum Hit {
     Check(usize),
     Day(NaiveDate),
     Tab(usize),
+    /// A row of the search results.
+    Result(usize),
+}
+
+/// The `/` search's live results (while `InputKind::Search` is open).
+#[derive(Debug, Clone, Default)]
+pub struct Found {
+    /// The best `SEARCH_LIMIT` hits.
+    pub hits: Vec<query::Hit>,
+    /// How many more matched than are shown.
+    pub more: usize,
+    pub sel: usize,
+    pub scroll: usize,
 }
 
 pub struct App {
@@ -153,7 +166,7 @@ pub struct App {
     pub tab: usize,
     pub sort: Sort,
     pub expanded: HashSet<String>,
-    pub filter: String,
+    pub found: Found,
     pub toast: Option<(String, bool)>,
     pub quit: bool,
     pub hits: Vec<(Rect, Hit)>,
@@ -199,7 +212,7 @@ impl App {
             tab: 0,
             sort: Sort::Due,
             expanded: HashSet::new(),
-            filter: String::new(),
+            found: Found::default(),
             toast,
             quit: false,
             hits: Vec::new(),
@@ -243,10 +256,6 @@ impl App {
         self.tabs().get(self.tab).and_then(|(id, _)| id.clone())
     }
 
-    fn passes(&self, e: &Entry) -> bool {
-        self.filter.is_empty() || query::matches(&self.filter, &e.title, &e.list)
-    }
-
     /// Recomputes the rows for the current view, keeping the selection on
     /// the same item when it's still there.
     pub fn rebuild(&mut self) {
@@ -266,10 +275,9 @@ impl App {
                     self.all_overdue,
                 );
                 for sec in sections {
-                    let entries: Vec<Entry> =
-                        sec.entries.into_iter().filter(|e| self.passes(e)).collect();
+                    let entries = sec.entries;
                     let is_today = sec.day == Some(today);
-                    if entries.is_empty() && !(is_today && self.filter.is_empty()) {
+                    if entries.is_empty() && !is_today {
                         continue;
                     }
                     rows.push(Row::Header {
@@ -293,10 +301,7 @@ impl App {
                     }
                 }
                 if self.someday {
-                    let undated: Vec<Entry> = query::undated(&self.s.store, &o)
-                        .into_iter()
-                        .filter(|e| self.passes(e))
-                        .collect();
+                    let undated = query::undated(&self.s.store, &o);
                     rows.push(Row::Header {
                         title: "Someday".into(),
                         overdue: false,
@@ -314,9 +319,6 @@ impl App {
                         });
                     }
                 }
-                if rows.iter().all(|r| !r.selectable()) && !self.filter.is_empty() {
-                    rows.push(Row::Note(format!("nothing matches /{}", self.filter)));
-                }
             }
             View::Tasks => {
                 let list = self.tab_list();
@@ -324,12 +326,8 @@ impl App {
                 let mut parent_open = false;
                 for r in all {
                     if r.depth == 0 {
-                        parent_open =
-                            self.expanded.contains(&r.entry.uid) || !self.filter.is_empty();
+                        parent_open = self.expanded.contains(&r.entry.uid);
                     } else if !parent_open {
-                        continue;
-                    }
-                    if !self.passes(&r.entry) {
                         continue;
                     }
                     let expanded = self.expanded.contains(&r.entry.uid);
@@ -341,18 +339,11 @@ impl App {
                     });
                 }
                 if rows.is_empty() {
-                    rows.push(Row::Note(if self.filter.is_empty() {
-                        "no tasks here · a adds one".into()
-                    } else {
-                        format!("nothing matches /{}", self.filter)
-                    }));
+                    rows.push(Row::Note("no tasks here · a adds one".into()));
                 }
             }
             View::Month => {
-                self.day_rows = query::day(&self.s.store, self.month_day, &o)
-                    .into_iter()
-                    .filter(|e| self.passes(e))
-                    .collect();
+                self.day_rows = query::day(&self.s.store, self.month_day, &o);
                 if let Some((uid, rid)) = &keep
                     && let Some(i) = self
                         .day_rows
@@ -720,10 +711,9 @@ impl App {
                 self.rebuild();
             }
             Action::Goto => self.mode = Mode::Input(Input::new(InputKind::Goto, String::new(), 0)),
-            Action::Filter => {
-                let text = self.filter.clone();
-                let n = text.chars().count();
-                self.mode = Mode::Input(Input::new(InputKind::Filter, text, n));
+            Action::Search => {
+                self.found = Found::default();
+                self.mode = Mode::Input(Input::new(InputKind::Search, String::new(), 0));
             }
             Action::Command => {
                 self.mode = Mode::Input(Input::new(InputKind::Command, String::new(), 0))
@@ -953,13 +943,7 @@ impl App {
             Mode::Input(_) => self.input_key(k),
             Mode::Normal => {
                 if k.code == KeyCode::Esc {
-                    if !self.filter.is_empty() {
-                        self.filter.clear();
-                        self.rebuild();
-                        self.toast("filter cleared");
-                    } else {
-                        self.toast = None;
-                    }
+                    self.toast = None;
                     return;
                 }
                 if let Some(a) = self.keys.action(&k) {
@@ -987,12 +971,8 @@ impl App {
         let mut edited = true;
         match k.code {
             KeyCode::Esc => {
-                let was_filter = inp.kind == InputKind::Filter;
                 self.mode = Mode::Normal;
-                if was_filter {
-                    self.filter.clear();
-                    self.rebuild();
-                }
+                self.found = Found::default();
                 return;
             }
             KeyCode::Enter => {
@@ -1011,6 +991,24 @@ impl App {
             }
             KeyCode::Char('c') if ctrl => {
                 self.mode = Mode::Normal;
+                self.found = Found::default();
+                return;
+            }
+            // Letters go into the query, so the results move with arrows and ctrl+n/p.
+            KeyCode::Up | KeyCode::Down | KeyCode::PageUp | KeyCode::PageDown
+                if inp.kind == InputKind::Search =>
+            {
+                let page = (self.body_height.saturating_sub(2)).max(1) as i64;
+                self.move_found(match k.code {
+                    KeyCode::Up => -1,
+                    KeyCode::Down => 1,
+                    KeyCode::PageUp => -page,
+                    _ => page,
+                });
+                return;
+            }
+            KeyCode::Char('n' | 'p') if ctrl && inp.kind == InputKind::Search => {
+                self.move_found(if k.code == KeyCode::Char('n') { 1 } else { -1 });
                 return;
             }
             KeyCode::Char('a') if ctrl => {
@@ -1046,6 +1044,7 @@ impl App {
                     inp.cursor -= 1;
                 } else if inp.text.is_empty() {
                     self.mode = Mode::Normal;
+                    self.found = Found::default();
                     return;
                 }
             }
@@ -1096,11 +1095,113 @@ impl App {
         }
         if edited {
             inp.completions.clear();
-            if inp.kind == InputKind::Filter {
-                self.filter = inp.text.clone();
-                self.sel = 0;
-                self.rebuild();
+            if inp.kind == InputKind::Search {
+                self.found = Found::default();
+                self.refresh_search();
             }
+        }
+    }
+
+    /// Re-runs the open search (after typing, or when the files changed),
+    /// keeping the selection on the same item when it's still there.
+    fn refresh_search(&mut self) {
+        let Mode::Input(Input {
+            kind: InputKind::Search,
+            text,
+            ..
+        }) = &self.mode
+        else {
+            return;
+        };
+        let keep = self
+            .found
+            .hits
+            .get(self.found.sel)
+            .map(|h| (h.entry.uid.clone(), h.entry.rid));
+        let mut hits = query::search(&self.s.store, text, &self.opts());
+        let more = hits.len().saturating_sub(query::SEARCH_LIMIT);
+        hits.truncate(query::SEARCH_LIMIT);
+        let sel = keep
+            .and_then(|(uid, rid)| {
+                hits.iter()
+                    .position(|h| h.entry.uid == uid && h.entry.rid == rid)
+            })
+            .unwrap_or(0);
+        self.found = Found {
+            hits,
+            more,
+            sel,
+            scroll: self.found.scroll,
+        };
+    }
+
+    fn move_found(&mut self, by: i64) {
+        let n = self.found.hits.len() as i64;
+        if n > 0 {
+            self.found.sel = (self.found.sel as i64 + by).clamp(0, n - 1) as usize;
+        }
+    }
+
+    /// Enter on a search result: shows the item on the page it lives on.
+    /// Undated tasks and subtasks open in Tasks ("all"); dated tasks and
+    /// events open on the Today page from their day. A page turned off in
+    /// the config falls back to another one.
+    pub fn jump(&mut self, hit: &query::Hit) {
+        let e = &hit.entry;
+        let parent = self.s.store.get(&e.uid).and_then(|i| i.f.parent.clone());
+        let order = if e.kind == Kind::Task && (hit.undated() || parent.is_some()) {
+            [View::Tasks, View::Today, View::Month]
+        } else {
+            [View::Today, View::Month, View::Tasks]
+        };
+        let views = self.s.cfg.views();
+        let Some(target) = order.into_iter().find(|v| views.contains(v)) else {
+            return;
+        };
+        let today = self.today();
+        let day = if hit.undated() { today } else { e.day };
+        self.sel = 0;
+        self.scroll = 0;
+        match target {
+            View::Tasks => {
+                self.tab = self.tabs().len() - 1;
+                if let Some(p) = &parent {
+                    self.expanded.insert(p.clone());
+                }
+            }
+            View::Today => {
+                self.agenda_from = (day != today).then_some(day);
+                if hit.undated() {
+                    self.someday = true;
+                }
+            }
+            View::Month => {
+                self.month_day = day;
+                self.day_sel = 0;
+            }
+        }
+        self.view = target;
+        self.rebuild();
+        let same = |x: &Entry| x.uid == e.uid && x.rid == e.rid;
+        let found = match target {
+            View::Month => self
+                .day_rows
+                .iter()
+                .position(same)
+                .map(|i| self.day_sel = i),
+            _ => self
+                .rows
+                .iter()
+                .position(|r| r.entry().is_some_and(same))
+                .map(|i| self.sel = i),
+        };
+        if found.is_none() {
+            let why = if e.done {
+                " (done items hide after hide_done_after)"
+            } else {
+                ""
+            };
+            self.toast(format!("{} isn't shown on this page{why}", e.title));
         }
     }
 
@@ -1249,11 +1350,10 @@ impl App {
                     None => self.error(format!("not a date: {text:?}")),
                 }
             }
-            InputKind::Filter => {
-                self.filter = text;
-                self.rebuild();
-                if !self.filter.is_empty() {
-                    self.toast("esc clears the filter");
+            InputKind::Search => {
+                let found = std::mem::take(&mut self.found);
+                if let Some(hit) = found.hits.get(found.sel) {
+                    self.jump(hit);
                 }
             }
             InputKind::Command => self.command(&text),
@@ -1336,6 +1436,28 @@ impl App {
     // ---------- mouse ----------
 
     pub fn mouse(&mut self, m: MouseEvent) {
+        if let Mode::Input(Input {
+            kind: InputKind::Search,
+            ..
+        }) = self.mode
+        {
+            match m.kind {
+                MouseEventKind::ScrollDown => self.move_found(3),
+                MouseEventKind::ScrollUp => self.move_found(-3),
+                MouseEventKind::Down(MouseButton::Left) => {
+                    let hit = self.hits.iter().rev().find_map(|(r, h)| match h {
+                        Hit::Result(i) if contains(*r, m.column, m.row) => Some(*i),
+                        _ => None,
+                    });
+                    if let Some(i) = hit {
+                        self.found.sel = i;
+                        self.input_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
         if !matches!(self.mode, Mode::Normal) {
             if let Mode::Help { scroll } | Mode::Output { scroll, .. } = &mut self.mode {
                 match m.kind {
@@ -1392,7 +1514,7 @@ impl App {
                         self.sel = 0;
                         self.rebuild();
                     }
-                    None => {}
+                    Some(Hit::Result(_)) | None => {}
                 }
             }
             _ => {}
@@ -1428,6 +1550,7 @@ impl App {
             }
             self.s.refresh_slots();
             self.rebuild();
+            self.refresh_search();
         } else if matches!(self.mode, Mode::Normal) {
             // The clock moved: "now", overdue and today can change.
             self.rebuild();

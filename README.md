@@ -13,6 +13,7 @@ ct add dentist sat 2-3pm @health!   # an event (a time range makes it one), in a
 ct add "standup 9:30 15m every weekday @work"
 ct ls                               # open tasks due by today, and undated ones
 ct done rent                        # by words, or by number from the last list
+ct search dentist                   # every task and event, past and future (also: ct find)
 ct today                            # overdue, today and the next 7 days (also: ct ag)
 ct cal                              # this month at a glance
 ct undo                             # every change can be undone
@@ -93,7 +94,7 @@ do something right now; `?` shows them all, plus the grammar.
 | `s` | sort: due / priority / manual (Tasks view) |
 | `t` `[` `]` `g` | today, previous / next week or month, go to a date |
 | `T` | show undated tasks on the Today page |
-| `/` | filter as you type; `esc` clears |
+| `/` | search every task and event (any date, any list, undated and done too); `↑` `↓` or `ctrl+n` `ctrl+p` pick, `enter` jumps to it, `esc` goes back |
 | `c` | colour themes, previewed live as you move |
 | `:` | the command line: any `ct` command (`:import ~/takeout.zip`, `:theme nord`, `:set week_start sunday`, `:ls all`) |
 | `?` / `q` | help / quit |
@@ -236,7 +237,7 @@ run time rather than compiled in: packages install them to
 ## Scripting
 
 Every read command takes `--json` (`ct ls --json`, `ct today --json`,
-`ct cal --json`, `ct lists --json`). Exit codes: 0 ok, 1 error or no match,
+`ct search --json`, `ct cal --json`, `ct lists --json`). Exit codes: 0 ok, 1 error or no match,
 2 a reference matched several items. Output is plain when piped and respects
 `NO_COLOR`. `ctui` with no arguments and no terminal prints the Today list.
 `ct completions bash|zsh|fish` prints shell completions (for the alias in

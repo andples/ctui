@@ -42,7 +42,7 @@ pub enum Action {
     PrevPeriod,
     NextPeriod,
     Goto,
-    Filter,
+    Search,
     Command,
     Someday,
     Sort,
@@ -138,7 +138,12 @@ pub const TABLE: &[(Action, &str, &[&str], &str)] = &[
         "next week / month",
     ),
     (Action::Goto, "goto", &["g"], "go to a date"),
-    (Action::Filter, "filter", &["/"], "filter"),
+    (
+        Action::Search,
+        "search",
+        &["/"],
+        "search everything; enter jumps to it",
+    ),
     (
         Action::Command,
         "command",
@@ -274,11 +279,13 @@ impl Keymap {
             by_action.insert(*a, keys.iter().filter_map(|k| Key::parse(k)).collect());
         }
         for (name, keys) in overrides {
-            // Names from before the Agenda page became Today.
+            // Older names: from before the Agenda page became Today, and
+            // from before `/` searched everything instead of filtering.
             let name = match name.as_str() {
                 "agenda" => "view_today",
                 "month" => "view_month",
                 "tasks" => "view_tasks",
+                "filter" => "search",
                 n => n,
             };
             match TABLE.iter().find(|(_, n, _, _)| *n == name) {
@@ -389,6 +396,11 @@ mod tests {
         assert_eq!(km.first(Action::Done).as_deref(), Some("c"));
         let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert_eq!(km.action(&ctrl_c), Some(Action::Quit));
+        let mut o = BTreeMap::new();
+        o.insert("filter".to_string(), vec!["F".to_string()]);
+        let km = Keymap::new(&o);
+        assert_eq!(km.action(&ev('F')), Some(Action::Search), "old name");
+        assert!(km.problems.is_empty());
     }
 
     #[test]

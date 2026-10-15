@@ -88,7 +88,7 @@ the config, and the default view is configurable.
  Sat 18
    all day      Sam's birthday                        #personal
  ─────────────────────────────────────────────────────────────
- a add  x done  e edit  d delete  u undo  / filter  ? help
+ a add  x done  e edit  d delete  u undo  / search  ? help
 ```
 
 - Overdue tasks are at the top (they collapse after N, configurable). Then
@@ -136,6 +136,42 @@ the config, and the default view is configurable.
   `s` cycles through due / priority / manual.
 - `space` expands subtasks. `J`/`K` reorders when the sort is manual. `>` and
   `<` indent a task under the one above, or outdent it.
+
+### 3.4 Search: one search across everything
+
+**Decision (owner, 2026-10-16):** `/` searches every task and event, on
+every page, instead of filtering the page you're on (the old per-page
+filter is gone).
+
+```
+ Search everything
+
+ › ┃ dentist              Sat 14:00–15:00          #health
+   ☐ dentist bill         tomorrow                 #home
+   ┃ dentist              Tue 3 Mar 09:00–09:30    #health
+   ☑ book dentist         Mon 12 Oct               #health
+ ─────────────────────────────────────────────────────────────
+ /dentist
+   4 matches · enter jumps to it · esc goes back
+```
+
+- Any date past or future, any list, undated tasks, done ones too (dimmed,
+  ranked lower). Every query word must be in the title or the `#list`.
+  An empty query shows a hint, not everything.
+- Ranked by how well the title matches, then open before done, then the
+  date nearest today (upcoming first, then undated, then past). The list
+  stops at 200 with `+N more`.
+- A repeating event shows its next occurrence from today, or its last one
+  if the series has ended.
+- `↑` `↓` (and `ctrl+n` `ctrl+p`, since letters go into the query) pick a
+  result; `enter` or a click jumps to it; `esc` goes back to where you were.
+- **Jumping:** an undated task (or a subtask) opens in Tasks on the "all"
+  tab, its parent expanded. A dated task or an event opens on the Today
+  page starting at its day, with that exact entry (that occurrence)
+  selected. If that page is turned off, another visible page is used. A
+  done item that's past `hide_done_after` isn't on any page, so a toast
+  says so.
+- The query logic is `core::query::search`, shared with `ct search`.
 
 **Not in v1:** an hour-by-hour week grid. In a terminal the agenda is more
 readable. It might come later as a fourth, optional view if it's actually
@@ -244,6 +280,7 @@ ct                              open the TUI
 ct add <text>                   add (task or event, by the grammar)
 ct ls [today|week|overdue|all|#list|<query>]     list tasks (default: open, due ≤ today + undated)
 ct today [days]                 Today: overdue, today and the next days (aliases: ag, agenda)
+ct search <words>               every task and event, any date, done too (alias: find; §3.4)
 ct cal [month]                  print a month grid (like `cal`, with dots)
 ct done <ref>…                  tick off (recurring tasks advance)
 ct undone <ref>
@@ -257,7 +294,7 @@ ct export [#list] > out.ics
 ct remind                       print/notify reminders due now (§8); for a timer, not a daemon
 ```
 
-- **Refs:** the numbers from the last `ls`/`ag` output (saved in the state dir,
+- **Refs:** the numbers from the last `ls`/`ag`/`search` output (saved in the state dir,
   like taskwarrior's working set), *or* text matched against open items.
   `ct done milk` works when exactly one item matches. Otherwise it lists the
   matches and changes nothing.
@@ -294,7 +331,7 @@ keymap, so it can't go out of date.
 | `t` | jump to today |
 | `[` `]` | previous / next period |
 | `g` | go to a date |
-| `/` | filter (live, fuzzy over title and list); `esc` clears |
+| `/` | search every task and event (§3.4); `enter` jumps to it, `esc` goes back. Config name `search` (`filter` still works) |
 | `:` | command line: every CLI command works here (`:import ~/cal.ics`, `:theme nord`) |
 | `?` | help |
 | `q` | quit |
@@ -465,7 +502,7 @@ src/
     undo.rs        journal of file contents before/after, shared by CLI and TUI
     parse.rs       the grammar (§5) → Draft (+ spans for colouring, preview text)
     ops.rs         add, edit, done, move, shift, delete, subtasks, lists… → commit
-    query.rs       agenda, day/days, tasks, busy days, matching
+    query.rs       agenda, day/days, tasks, busy days, matching, search
     recur.rs       expansion (rrule crate), overrides, next due, describe()
     import.rs      ics / folders / zip / Tasks.json → plan → apply; export
     remind.rs      alarms due in a window, last-run state
@@ -533,7 +570,7 @@ Each one ends with something usable.
 |---|---|---|
 | **M0** | Skeleton | clap with an empty TUI, config/paths, CI (test + clippy) |
 | **M1** | Tasks core + CLI | model, vdir store with `.ics` round-trip, grammar for tasks, `add/ls/done/undone/rm/edit/mv/undo`, refs, `--json` |
-| **M2** | Tasks TUI | Tasks view, add bar with live preview, all §7 keys for tasks, undo toasts, hints, `?`, filter, mouse |
+| **M2** | Tasks TUI | Tasks view, add bar with live preview, all §7 keys for tasks, undo toasts, hints, `?`, filter (now search, §3.4), mouse |
 | **M3** | Events + Agenda | events in model and grammar (ranges, all-day), Agenda view, `ct ag` |
 | **M4** | Month view | grid, dots, day pane, `g`, `[` `]`, `ct cal`, responsive layouts |
 | **M5** | Recurrence | `every …`, expansion, advance-on-done, this/all edits |
