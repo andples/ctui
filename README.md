@@ -20,11 +20,11 @@ ct undo                             # every change can be undone
 ct                                  # the TUI
 ```
 
-## Build
+## Install
 
 ```sh
-cargo build --release               # target/release/ctui
-cargo install --path .              # into ~/.cargo/bin
+cargo install ctui                  # from crates.io
+cargo install --path .              # from a clone of this repo
 ```
 
 `ctui` is the binary. Get `ct` from the shortcuts below rather than
@@ -263,10 +263,11 @@ slot from the first time ctui sees it, so colours don't shuffle; pin one with
 `ct lists color work 3`, or give it a fixed colour with
 `ct lists color work #a3be8c`.
 
-The Monkeytype themes are GPL-3.0, so they're loaded from a themes folder at
-run time rather than compiled in: packages install them to
-`share/ctui/themes/`, and a build from this repo finds `themes/` next to it.
-`cargo build --features monkeytype-themes` compiles them in.
+The Monkeytype themes are GPL-3.0 and ctui is MIT, so they're never compiled
+in: ctui loads them from a themes folder at run time. A build from this repo
+finds `themes/` next to it, packages can install them to `share/ctui/themes/`,
+and copying any of them into `~/.config/ctui/themes/` works too. The crates.io
+package only carries the 14 MIT and own themes.
 
 ## Agents (MCP)
 
@@ -316,6 +317,11 @@ Every read command takes `--json` (`ct ls --json`, `ct today --json`,
 `ct completions bash|zsh|fish` prints shell completions (zsh and fish
 complete the shortcuts through the alias; in bash add
 `complete -o default -F _ctui ct`).
+
+## License
+
+MIT (see [LICENSE](LICENSE)), except the 25 Monkeytype-derived theme files,
+which stay GPL-3.0 (below).
 
 ## Credits
 

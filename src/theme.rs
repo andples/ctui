@@ -162,8 +162,9 @@ macro_rules! themes {
     ($($name:literal),* $(,)?) => { &[$(($name, include_str!(concat!("../themes/", $name, ".toml")))),*] };
 }
 
-/// Compiled-in themes. The Monkeytype ones (GPL-3.0) only with the
-/// `monkeytype-themes` feature; otherwise they load from a themes folder.
+/// Compiled-in themes: ctui's own and the MIT palettes. The Monkeytype ones
+/// (GPL-3.0) are never compiled in, since ctui is MIT; they load from a
+/// themes folder (`theme_dirs`) like any user theme.
 const BUILTIN: &[(&str, &str)] = themes!(
     "default",
     "light",
@@ -180,37 +181,6 @@ const BUILTIN: &[(&str, &str)] = themes!(
     "solarized-light",
     "tokyo-night",
 );
-
-#[cfg(feature = "monkeytype-themes")]
-const MONKEYTYPE: &[(&str, &str)] = themes!(
-    "8008",
-    "80s-after-dark",
-    "aurora",
-    "bento",
-    "botanical",
-    "carbon",
-    "chaos-theory",
-    "cherry-blossom",
-    "comfy",
-    "dark-magic-girl",
-    "godspeed",
-    "horizon",
-    "iceberg-dark",
-    "iceberg-light",
-    "laser",
-    "lavender",
-    "matrix",
-    "miami-nights",
-    "modern-dolch",
-    "nautilus",
-    "olivia",
-    "paper",
-    "serika-dark",
-    "serika",
-    "superuser",
-);
-#[cfg(not(feature = "monkeytype-themes"))]
-const MONKEYTYPE: &[(&str, &str)] = &[];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Origin {
@@ -246,7 +216,7 @@ pub fn theme_dirs(user_dir: &Path) -> Vec<PathBuf> {
 /// Every theme by name; later sources replace earlier ones.
 pub fn available(user_dir: &Path) -> BTreeMap<String, Origin> {
     let mut out = BTreeMap::new();
-    for (name, _) in BUILTIN.iter().chain(MONKEYTYPE) {
+    for (name, _) in BUILTIN.iter() {
         out.insert(name.to_string(), Origin::Builtin);
     }
     for dir in theme_dirs(user_dir) {
@@ -273,7 +243,6 @@ pub fn load(name: &str, user_dir: &Path) -> Result<Theme> {
         Some(Origin::Builtin) => {
             let text = BUILTIN
                 .iter()
-                .chain(MONKEYTYPE)
                 .find(|(n, _)| *n == name)
                 .map(|(_, t)| *t)
                 .expect("listed");

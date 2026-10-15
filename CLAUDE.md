@@ -3,7 +3,8 @@
 Minimal terminal calendar + task list in Rust (ratatui + crossterm + clap). Binary `ctui`
 (users alias `ct`). The plan, decisions and milestones are in `DESIGN.md` (§12 has the
 source layout): read it first and keep it current when a decision changes. The repo is
-private and has no license yet (owner's call, DESIGN.md §17); don't publish anything.
+private; ctui is MIT and published on crates.io (0.1.0, 2026-10-16). Releases need the owner's
+explicit go-ahead.
 
 Rules that override convenience:
 - Usability first, no bloat (DESIGN.md §1, §15). A new dependency or feature must justify itself.
@@ -15,7 +16,8 @@ Rules that override convenience:
 - MCP (`src/mcp.rs`) takes structured fields that must map onto `parse::Draft`; `apply_fields`
   destructures `Draft` exhaustively on purpose, so a new grammar field needs MCP support too
   (and a row in `ITEM_FIELDS` plus a case in the grammar-vs-fields test).
-- The Monkeytype themes (GPL-3.0) are never compiled in by default (`monkeytype-themes` feature).
+- ctui is MIT. The Monkeytype themes (GPL-3.0) are never compiled in or packaged; they load from
+  a themes folder at run time. The crate's `include` list in Cargo.toml keeps them out.
 
 Commands: `cargo test`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt`,
 `cargo run -- --config-dir /tmp/c --data-dir /tmp/d --state-dir /tmp/s` (sandboxed).

@@ -6,9 +6,8 @@ plain command-line tool that does the same things. Everything stays on your
 machine: no accounts, no server, no Google. You can bring a Google calendar
 over once with `ct import`.
 
-Status (2026-10-15): M0–M8 are built, and M9's checks pass (first frame
-21 ms and a 5.8 MB binary with 2,000 items). The public release waits for
-the license decision (§17). Where the build differs from this plan, the
+Status (2026-10-16): M0–M9 are done (first frame 21 ms and a 5.8 MB binary
+with 2,000 items); ctui is MIT and 0.1.0 is on crates.io. Where the build differs from this plan, the
 plan was updated.
 
 ---
@@ -501,7 +500,8 @@ lists = ["#88c0d0", "#a3be8c", "#d08770", "#b48ead", "#ebcb8b", "#81a1c1"]
     list and mapping in `themes/MONKEYTYPE.md`. Monkeytype has no list
     colours, so those are derived from each theme's `main` (OKLCH hue steps,
     at least 3:1 contrast on `bg`).
-- **Built in or not** depends on the license (§17): see the open question.
+- **Built in:** ctui is MIT, so only `default`, `light` and the 12 MIT palettes
+  are compiled in; the Monkeytype files load from a themes folder.
 
 ---
 
@@ -667,16 +667,9 @@ Added 2026-10-16 at the owner's request; all decisions below are theirs.
 
 ## 17. Open questions
 
-1. **License** (undecided; the repo stays private until then). This also
-   decides how the Monkeytype themes ship. They're GPL-3.0, and compiling
-   GPL files into the binary (`include_str!`) makes the binary GPL.
-   - If ctui is **GPL-3.0**, compile all 39 in. Simplest, and every theme
-     works offline from the first run.
-   - If ctui is **MIT** (like ttyp), compile in only `default`, `light` and the
-     12 MIT palettes. The 25 Monkeytype themes ship as separate files:
-     packages install them to `share/ctui/themes/`, and ctui reads that folder
-     as a second built-in source. `cargo install` users copy them by hand.
-     That's how ttyp avoids the issue too (its catalogue).
+1. ~~License~~: **MIT** (owner, 2026-10-16). The Monkeytype themes are never
+   compiled in or put in the crate; they load from a themes folder at run time.
+   0.1.0 went to crates.io the same day.
 2. Should `ct` itself be installed as a binary name? The plan says no: Arch's
    `extra/ct` (Flatcar config transpiler) also installs `/usr/bin/ct`, so
    `ctui init` defines `ct` as an alias, and only when no other `ct` exists

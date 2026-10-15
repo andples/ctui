@@ -3,16 +3,33 @@ name = "ctui"
 version = "0.1.0"
 edition = "2024"
 description = "Minimal terminal calendar and task list, as a TUI and a CLI"
-publish = false
+license = "MIT"
 readme = "README.md"
 keywords = ["calendar", "todo", "tui", "icalendar", "ratatui"]
-categories = ["command-line-utilities"]
-
-[features]
-# The Monkeytype-derived themes are GPL-3.0 (themes/MONKEYTYPE.md). Off by
-# default so they're only compiled in when the build opts in; without it they
-# load from a themes folder at run time (DESIGN.md §16).
-monkeytype-themes = []
+categories = ["command-line-utilities", "date-and-time"]
+# The published crate holds the code and the MIT/own themes only. The
+# Monkeytype themes (GPL-3.0) stay in the repo's themes/ folder.
+include = [
+    "src/**",
+    "agents/SKILL.md",
+    "themes/default.toml",
+    "themes/light.toml",
+    "themes/catppuccin-latte.toml",
+    "themes/catppuccin-mocha.toml",
+    "themes/dracula.toml",
+    "themes/everforest.toml",
+    "themes/gruvbox.toml",
+    "themes/kanagawa.toml",
+    "themes/nord.toml",
+    "themes/one-dark.toml",
+    "themes/rose-pine.toml",
+    "themes/solarized-dark.toml",
+    "themes/solarized-light.toml",
+    "themes/tokyo-night.toml",
+    "themes/CREDITS.md",
+    "README.md",
+    "LICENSE",
+]
 
 [dependencies]
 anyhow = "1.0.104"
