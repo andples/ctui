@@ -1,7 +1,9 @@
 [package]
 name = "ctui"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
+# Oldest Rust that builds ctui (ratatui needs 1.88). CI checks it.
+rust-version = "1.88"
 description = "Minimal terminal calendar and task list, as a TUI and a CLI"
 license = "MIT"
 repository = "https://github.com/andples/ctui"
@@ -46,7 +48,7 @@ rrule = "0.14.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 toml = "1.1.8"
-uuid = { version = "1.28.0", features = ["v4"] }
+uuid = { version = "1.10", features = ["v4"] }
 zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [profile.release]

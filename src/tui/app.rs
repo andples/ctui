@@ -1394,16 +1394,14 @@ impl App {
                 self.open_themes();
                 return;
             }
-            // Page names, and the shell shortcut names (`:ctm`, `:cttasks`).
-            Some(w)
-                if words.len() == 1
-                    && let Some(v) =
-                        View::parse(w).ok().or_else(|| crate::shortcuts::page_of(w)) =>
-            {
-                self.switch(v);
-                return;
-            }
             _ => {}
+        }
+        // Page names, and the shell shortcut names (`:ctm`, `:cttasks`).
+        if let [w] = words.as_slice()
+            && let Some(v) = View::parse(w).ok().or_else(|| crate::shortcuts::page_of(w))
+        {
+            self.switch(v);
+            return;
         }
         let mut argv = vec!["ctui".to_string()];
         argv.extend(words);
