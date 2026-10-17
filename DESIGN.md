@@ -653,7 +653,11 @@ Added 2026-10-16 at the owner's request; all decisions below are theirs.
 
 ## 16. Future plans (parked)
 
-Parked on 2026-10-16. The owner's rule for everything here: **a companion
+Parked on 2026-10-16. **Update 2026-10-18:** the owner decided ctui needs phone
+integration to be worth using, and chose a self-hosted server (CalDAV via
+Radicale, a SvelteKit web app/PWA, then a built-in `ctui sync`). The staged
+plan lives in its own project: `~/Projects/ctui-server/DESIGN.md`. Its Stage 1
+is item 1 below. The owner's rule for everything here: **a companion
 app is not bloat as long as the main ctui isn't harmed.** That means it lives
 in its own repo (or its own crate), talks to ctui only through the vdir files,
 CalDAV, the CLI's `--json` or MCP, and adds no dependency, setting or code
