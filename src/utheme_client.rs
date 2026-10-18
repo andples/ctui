@@ -25,8 +25,6 @@ pub const PROTOCOL: u64 = 1;
 pub const THEME: &str = "utheme";
 /// How often `current` is re-read in case a file system event was missed.
 pub const POLL: Duration = Duration::from_secs(1);
-/// How long to wait after an event before reading, so a burst reads once.
-pub const DEBOUNCE: Duration = Duration::from_millis(50);
 
 /// An sRGB colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,8 +227,12 @@ enum Wake {
 }
 
 /// A thread that delivers an `Update` each time `current` resolves somewhere
-/// new: on a file system event in the data folder (debounced) or, failing
-/// that, on the next one-second poll. Dropping it stops the thread.
+/// new: on a file system event in the data folder or, failing that, on the
+/// next one-second poll. A burst of events is read once per wake (the queue
+/// is drained first) rather than after a fixed delay, since a switch is one
+/// atomic rename and `current` is compared before anything is read. After
+/// each update it calls `wake`, so the app's event loop needn't poll for
+/// it. Dropping it stops the thread.
 pub struct Watcher {
     rx: Receiver<Update>,
     wake: Sender<Wake>,
@@ -238,14 +240,19 @@ pub struct Watcher {
 
 impl Watcher {
     /// Starts watching; `seen` is the target the caller already handled.
-    fn start(paths: Paths, needs: &'static [&'static str], seen: Target) -> Watcher {
+    fn start(
+        paths: Paths,
+        needs: &'static [&'static str],
+        seen: Target,
+        on_update: Option<fn()>,
+    ) -> Watcher {
         let (tx, rx) = mpsc::channel();
         let (wake, wakes) = mpsc::channel();
         let fs_wake = wake.clone();
         // Without a thread there are no live updates, but nothing else breaks.
         let _ = thread::Builder::new()
             .name("utheme".into())
-            .spawn(move || watch(paths, needs, seen, tx, fs_wake, wakes));
+            .spawn(move || watch(paths, needs, seen, tx, on_update, fs_wake, wakes));
         Watcher { rx, wake }
     }
 
@@ -266,20 +273,38 @@ fn watch(
     needs: &'static [&'static str],
     mut seen: Target,
     tx: Sender<Update>,
+    on_update: Option<fn()>,
     fs_wake: Sender<Wake>,
     wakes: Receiver<Wake>,
 ) {
-    let mut fs_watch = None;
+    // Watch the data folder, or while it doesn't exist (not set up yet, or
+    // `utheme uninstall` removed it) its parent, so a reinstall is seen at
+    // once rather than on the next poll. This is the folder last tried and
+    // its watch if that worked; if it didn't, the poll still runs, and it
+    // isn't retried until the folder changes.
+    let mut fs_watch: Option<(PathBuf, Option<notify::RecommendedWatcher>)> = None;
     loop {
-        // (Re)attach the file system watch whenever the folder exists;
-        // after an uninstall the old one may watch a deleted folder.
-        if fs_watch.is_none() && paths.data.is_dir() {
-            fs_watch = fs_watcher(&paths.data, fs_wake.clone());
+        let want = [
+            paths.data.as_path(),
+            paths.data.parent().unwrap_or(&paths.data),
+        ]
+        .into_iter()
+        .find(|d| d.is_dir());
+        let moved = want != fs_watch.as_ref().map(|(d, _)| d.as_path());
+        if moved {
+            fs_watch = want.map(|d| (d.to_path_buf(), fs_watcher(d, fs_wake.clone())));
         }
-        match wakes.recv_timeout(POLL) {
+        // A new watch may have missed a switch made while it was set up, so
+        // look before waiting.
+        let woke = if moved {
+            Ok(Wake::Fs)
+        } else {
+            wakes.recv_timeout(POLL)
+        };
+        match woke {
             Ok(Wake::Stop) | Err(RecvTimeoutError::Disconnected) => return,
+            // Everything already queued is covered by the one read below.
             Ok(Wake::Fs) => {
-                thread::sleep(DEBOUNCE);
                 if wakes.try_iter().any(|w| matches!(w, Wake::Stop)) {
                     return;
                 }
@@ -290,13 +315,23 @@ fn watch(
         if now == seen {
             continue;
         }
-        if now == Target::Gone {
-            fs_watch = None;
-        }
         if tx.send(update_for(&now, needs)).is_err() {
             return;
         }
         seen = now;
+        if let Some(f) = on_update {
+            f();
+        }
+    }
+}
+
+/// Wakes a crossterm event loop in this process from another thread: a
+/// `SIGWINCH` to ourselves, which crossterm turns into `Event::Resize` (with
+/// the unchanged size). Pass it as `Client::start`'s `on_update`.
+pub fn wake_terminal() {
+    // SAFETY: kill(2) with our own pid and a signal crossterm handles.
+    unsafe {
+        libc::kill(libc::getpid(), libc::SIGWINCH);
     }
 }
 
@@ -326,14 +361,22 @@ pub struct Client {
 
 impl Client {
     /// Reads the current generation (a few small files, so it can run before
-    /// the first frame), writes the first heartbeat and starts watching.
-    /// `None` only when there's no `$HOME` to look in.
+    /// the first frame), writes the first heartbeat and starts watching;
+    /// `on_update` runs on the watcher thread after each later update (e.g.
+    /// `wake_terminal`). `None` only when there's no `$HOME` to look in.
     pub fn start(
         app: &'static str,
         version: &'static str,
         needs: &'static [&'static str],
+        on_update: Option<fn()>,
     ) -> Option<(Client, Update)> {
-        Some(Self::start_in(Paths::from_env()?, app, version, needs))
+        Some(Self::start_in(
+            Paths::from_env()?,
+            app,
+            version,
+            needs,
+            on_update,
+        ))
     }
 
     pub fn start_in(
@@ -341,13 +384,14 @@ impl Client {
         app: &'static str,
         version: &'static str,
         needs: &'static [&'static str],
+        on_update: Option<fn()>,
     ) -> (Client, Update) {
         let now = target(&paths);
         let first = update_for(&now, needs);
         let mut client = Client {
             app,
             version,
-            watcher: Watcher::start(paths.clone(), needs, now),
+            watcher: Watcher::start(paths.clone(), needs, now, on_update),
             paths,
             showing: None,
         };
@@ -666,7 +710,7 @@ mod tests {
         switch(&paths, &g1);
         let beat = heartbeat::path(&paths, "app");
 
-        let (mut client, first) = Client::start_in(paths.clone(), "app", "0.1.0", NEEDS);
+        let (mut client, first) = Client::start_in(paths.clone(), "app", "0.1.0", NEEDS, None);
         let Update::Theme(s) = first else {
             panic!("{first:?}")
         };
@@ -716,7 +760,7 @@ mod tests {
             .map(|i| generation(&paths, &format!("g{i}"), &format!("#0000{i:02}")))
             .collect();
         switch(&paths, &gens[0]);
-        let (mut client, _) = Client::start_in(paths.clone(), "app", "0.1.0", NEEDS);
+        let (mut client, _) = Client::start_in(paths.clone(), "app", "0.1.0", NEEDS, None);
         for g in &gens[1..] {
             switch(&paths, g);
         }
@@ -733,10 +777,42 @@ mod tests {
     }
 
     #[test]
+    fn reinstall_is_followed_at_once_and_wakes_the_app() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static WOKEN: AtomicUsize = AtomicUsize::new(0);
+        fn woken() {
+            WOKEN.fetch_add(1, Ordering::SeqCst);
+        }
+        let root = scratch("reinstall");
+        let paths = Paths::under(&root);
+        switch(&paths, &generation(&paths, "g1", "#111111"));
+        let (mut client, _) = Client::start_in(paths.clone(), "app", "0.1.0", NEEDS, Some(woken));
+
+        // `utheme uninstall` removes the whole data folder.
+        fs::remove_dir_all(&paths.data).unwrap();
+        assert_eq!(wait_for(&mut client, |_| true), Update::Gone);
+        let woke = WOKEN.load(Ordering::SeqCst);
+        assert!(woke >= 1, "woken for the uninstall");
+        thread::sleep(Duration::from_millis(100)); // the watch moves to the parent
+
+        let at = Instant::now();
+        switch(&paths, &generation(&paths, "g2", "#222222"));
+        let u = wait_for(&mut client, |u| matches!(u, Update::Theme(_)));
+        assert!(matches!(u, Update::Theme(s) if s.generation == "g2"));
+        assert!(
+            at.elapsed() < Duration::from_millis(500),
+            "{:?}",
+            at.elapsed()
+        );
+        assert!(WOKEN.load(Ordering::SeqCst) > woke);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn missing_setup_starts_cleanly() {
         let root = scratch("missing");
         let paths = Paths::under(&root);
-        let (client, first) = Client::start_in(paths.clone(), "app", "0.1.0", NEEDS);
+        let (client, first) = Client::start_in(paths.clone(), "app", "0.1.0", NEEDS, None);
         assert_eq!(first, Update::Gone);
         assert!(
             !paths.clients.exists(),

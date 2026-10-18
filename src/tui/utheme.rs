@@ -28,9 +28,11 @@ const NEEDS: &[&str] = &[
     "magenta",
 ];
 
-/// How often the event loop looks for a switch while following. The watcher
-/// thread does the reading; this only bounds how long a recolour waits.
-const WAKE: Duration = Duration::from_millis(200);
+/// The longest the event loop sleeps while following before looking for a
+/// switch. The watcher thread wakes it on every switch
+/// (`utheme_client::wake_terminal`: a `SIGWINCH`, which arrives as a resize
+/// and just redraws); this is only the fallback.
+const WAKE: Duration = utheme_client::POLL;
 
 /// Following state. Dropping the client removes the heartbeat.
 #[derive(Default)]
@@ -83,8 +85,8 @@ impl App {
         if wanted && self.utheme.client.is_none() {
             let (app, version) = ("ctui", env!("CARGO_PKG_VERSION"));
             let started = match &self.utheme.paths {
-                Some(p) => Some(Client::start_in(p.clone(), app, version, NEEDS)),
-                None => Client::start(app, version, NEEDS),
+                Some(p) => Some(Client::start_in(p.clone(), app, version, NEEDS, None)),
+                None => Client::start(app, version, NEEDS, Some(utheme_client::wake_terminal)),
             };
             if let Some((client, first)) = started {
                 self.utheme.client = Some(client);

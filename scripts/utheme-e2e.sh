@@ -108,11 +108,13 @@ ms=$(wait_for 3000 shows 494949) && ok "10 quick switches end on the last (${ms}
 sleep 1.2
 shows 494949 && beat_says r9 && ok "still on r9 a second later" || bad "moved off r9"
 
-rm "$data/current"
+# `utheme uninstall` removes the whole data folder.
+rm -rf "$data"
 wait_for 3000 no_beat >/dev/null && ok "uninstall: heartbeat removed" || bad "heartbeat left after uninstall"
 shows 494949 && bad "still showing utheme after uninstall" || ok "uninstall: fell back"
-switch g1
-wait_for 3000 shows 102030 >/dev/null && ok "set up again: follows again" || bad "didn't follow after setup"
+sleep 0.5
+mkdir -p "$data" && gen g1 102030 && switch g1
+ms=$(wait_for 3000 shows 102030) && ok "set up again: follows again (${ms} ms)" || bad "didn't follow after setup"
 
 t send-keys -t e2e "$quit"
 wait_for 3000 gone >/dev/null && ok "quit" || bad "didn't quit"

@@ -387,6 +387,7 @@ dependencies = [
  "crossterm",
  "directories",
  "iana-time-zone",
+ "libc",
  "notify",
  "ratatui",
  "rrule",

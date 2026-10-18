@@ -505,7 +505,9 @@ lists = ["#88c0d0", "#a3be8c", "#d08770", "#b48ead", "#ebcb8b", "#81a1c1"]
 - **Live from utheme (macOS only):** with `theme = "utheme"` the TUI follows
   utheme's client protocol v1 (in the utheme repo, `docs/CLIENT-PROTOCOL.md`):
   it reads `~/.local/share/utheme/current/{theme.json,palette.json}`, watches
-  for the link to change (FSEvents via `notify`, plus a 1 s poll), recolours,
+  for the link to change (FSEvents via `notify` on the folder, or its parent while it's
+  missing, plus a 1 s poll; the watcher wakes the event loop with a `SIGWINCH` to
+  ourselves, which crossterm reports as a resize), recolours,
   and writes a heartbeat in `~/.local/state/utheme/clients/`. The palette maps
   onto `bg fg sub main error lists` and goes through `Theme::parse`, so live
   and static `themes/utheme.toml` look the same. Off macOS none of it is built.
