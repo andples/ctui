@@ -14,7 +14,7 @@ use crate::config::View;
 use crate::core::model::Kind;
 use crate::core::parse::{self, Role, fmt_time};
 use crate::core::query::{self, Entry};
-use crate::theme::{self, Color};
+use crate::theme::Color;
 
 pub fn color(c: Color) -> ratatui::style::Color {
     match c {
@@ -1221,7 +1221,6 @@ fn draw_themes(f: &mut Frame, app: &App, p: &Pal, names: &[String], idx: usize) 
     let skip = idx
         .saturating_sub(rows.saturating_sub(1) / 2)
         .min(names.len().saturating_sub(rows));
-    let dir = app.s.paths.themes_dir();
     let lines: Vec<Line> = names
         .iter()
         .enumerate()
@@ -1240,7 +1239,7 @@ fn draw_themes(f: &mut Frame, app: &App, p: &Pal, names: &[String], idx: usize) 
                     },
                 ),
             ];
-            if let Ok(t) = theme::load(n, &dir) {
+            if let Ok(t) = app.s.theme_named(n) {
                 for c in t.lists.iter().take(6) {
                     spans.push(Span::styled("■", Style::default().fg(color(*c))));
                 }

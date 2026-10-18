@@ -3,6 +3,8 @@
 
 pub mod app;
 pub mod keys;
+#[cfg(target_os = "macos")]
+pub mod utheme;
 pub mod view;
 
 use std::io::{self, Stdout};
@@ -57,7 +59,12 @@ pub fn run(session: Session, start: Option<crate::config::View>) -> Result<()> {
     if let Some(v) = start {
         app.start_on(v);
     }
+    // Read before the first frame, so it never shows another theme first.
+    #[cfg(target_os = "macos")]
+    app.utheme_tick();
     let result = event_loop(&mut term, &mut app, mouse);
+    #[cfg(target_os = "macos")]
+    app.utheme_stop();
     leave(&mut term, mouse);
     result
 }
@@ -73,9 +80,19 @@ fn event_loop(term: &mut Term, app: &mut App, mouse: bool) -> Result<()> {
             app.after_raw_edit(msg);
             continue;
         }
+        #[cfg(not(target_os = "macos"))]
         if !event::poll(Duration::from_secs(2))? {
             app.tick();
             continue;
+        }
+        #[cfg(target_os = "macos")]
+        match app.utheme_wait(Duration::from_secs(2))? {
+            utheme::Wake::Event => {}
+            utheme::Wake::Tick => {
+                app.tick();
+                continue;
+            }
+            utheme::Wake::Recolour => continue,
         }
         match event::read()? {
             Event::Key(k) if k.kind != KeyEventKind::Release => {

@@ -430,3 +430,76 @@ fn search_mouse_click_jumps() {
     assert_eq!(t.app.view, View::Today);
     assert_eq!(t.app.selected().unwrap().title, "renew passport");
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn follows_utheme_live() {
+    use crate::theme::Color;
+    use crate::utheme_client::testing::{generation, switch};
+    use crate::utheme_client::{Paths, heartbeat};
+    use std::time::{Duration, Instant};
+
+    let mut t = setup("utheme");
+    let uth = Paths::under(&t.dir.join("uth"));
+    switch(&uth, &generation(&uth, "g1", "#111111"));
+    t.app.utheme.paths = Some(uth.clone());
+    let wait = |app: &mut App, done: &dyn Fn(&App) -> bool| {
+        let start = Instant::now();
+        while !done(app) {
+            assert!(start.elapsed() < Duration::from_secs(3), "timed out");
+            std::thread::sleep(Duration::from_millis(20));
+            app.utheme_tick();
+        }
+    };
+    let bg = |app: &App| app.s.theme.bg;
+
+    // Opted in from the command line: the live palette at once.
+    key(&mut t.app, ':');
+    typed(&mut t.app, "set theme utheme");
+    enter(&mut t.app);
+    assert!(t.app.utheme_tick());
+    assert_eq!(bg(&t.app), Color::Rgb(0x11, 0x11, 0x11));
+    assert_eq!(t.app.s.theme.main, Color::Rgb(0x88, 0xc0, 0xd0));
+    screen(&mut t.app, 100, 30);
+    let beat = heartbeat::path(&uth, "ctui");
+    assert!(std::fs::read_to_string(&beat).unwrap().contains("\"g1\""));
+    // From here on only utheme changes: the config must stay byte for byte.
+    let config_file = t.app.s.paths.config_file();
+    let config = std::fs::read(&config_file).unwrap();
+
+    switch(&uth, &generation(&uth, "g2", "#222222"));
+    wait(&mut t.app, &|a| bg(a) == Color::Rgb(0x22, 0x22, 0x22));
+    assert!(std::fs::read_to_string(&beat).unwrap().contains("\"g2\""));
+
+    // The picker keeps its preview; esc lands on the newest utheme theme.
+    t.app.mode = Mode::Normal;
+    key(&mut t.app, 'c');
+    key(&mut t.app, 'j');
+    assert!(matches!(t.app.mode, Mode::Themes { .. }));
+    let preview = t.app.s.theme.clone();
+    switch(&uth, &generation(&uth, "g3", "#333333"));
+    wait(&mut t.app, &|a| {
+        a.s.live_theme.as_ref().map(|l| l.bg) == Some(Color::Rgb(0x33, 0x33, 0x33))
+    });
+    assert_eq!(t.app.s.theme, preview);
+    t.app.key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+    assert_eq!(bg(&t.app), Color::Rgb(0x33, 0x33, 0x33));
+
+    // Uninstalled: back to the default, heartbeat gone. Back: followed again.
+    std::fs::remove_file(&uth.current).unwrap();
+    wait(&mut t.app, &|a| a.s.live_theme.is_none());
+    assert_eq!(t.app.s.theme, crate::theme::Theme::fallback());
+    assert!(!beat.exists());
+    switch(&uth, &generation(&uth, "g1", "#111111"));
+    wait(&mut t.app, &|a| bg(a) == Color::Rgb(0x11, 0x11, 0x11));
+    assert_eq!(std::fs::read(&config_file).unwrap(), config);
+
+    // Another theme: no watching, no heartbeat.
+    key(&mut t.app, ':');
+    typed(&mut t.app, "theme nord");
+    enter(&mut t.app);
+    t.app.utheme_tick();
+    assert_eq!(t.app.s.cfg.theme, "nord");
+    assert!(!beat.exists());
+    assert_ne!(bg(&t.app), Color::Rgb(0x11, 0x11, 0x11));
+}

@@ -23,6 +23,10 @@ pub struct Session {
     pub warnings: Vec<String>,
     /// Fixed "now" for tests; the clock otherwise.
     pub fixed_now: Option<DateTime<Tz>>,
+    /// utheme's current theme while the TUI follows it (`theme = "utheme"`,
+    /// macOS): what the name `utheme` means instead of `themes/utheme.toml`.
+    #[cfg(target_os = "macos")]
+    pub live_theme: Option<Theme>,
 }
 
 impl Session {
@@ -50,6 +54,8 @@ impl Session {
             slots,
             warnings,
             fixed_now,
+            #[cfg(target_os = "macos")]
+            live_theme: None,
         })
     }
 
@@ -78,9 +84,30 @@ impl Session {
 
     /// Re-reads the theme after a config change.
     pub fn reload_theme(&mut self) -> Option<String> {
+        #[cfg(target_os = "macos")]
+        if let Some(t) = self.live(&self.cfg.theme) {
+            self.theme = t;
+            return None;
+        }
         let (theme, warn) = theme::load_or_default(&self.cfg.theme, &self.paths.themes_dir());
         self.theme = theme;
         warn
+    }
+
+    /// A theme by name, as the picker previews it.
+    pub fn theme_named(&self, name: &str) -> Result<Theme> {
+        #[cfg(target_os = "macos")]
+        if let Some(t) = self.live(name) {
+            return Ok(t);
+        }
+        theme::load(name, &self.paths.themes_dir())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn live(&self, name: &str) -> Option<Theme> {
+        (name == crate::utheme_client::THEME)
+            .then(|| self.live_theme.clone())
+            .flatten()
     }
 
     /// After the lists change: hand out palette slots to new ones.

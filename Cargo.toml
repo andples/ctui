@@ -51,6 +51,11 @@ toml = "1.1.8"
 uuid = { version = "1.10", features = ["v4"] }
 zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
+# Live themes from utheme (`src/utheme_client.rs`) are macOS-only, and so is
+# their file watcher: other platforms build exactly as before.
+[target.'cfg(target_os = "macos")'.dependencies]
+notify = "8.2.0"
+
 [profile.release]
 lto = true
 codegen-units = 1

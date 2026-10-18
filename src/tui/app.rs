@@ -176,6 +176,9 @@ pub struct App {
     pub history_idx: Option<usize>,
     /// Set when the TUI must hand the terminal to $EDITOR.
     pub raw_edit: Option<String>,
+    /// Following utheme live (`theme = "utheme"`, macOS).
+    #[cfg(target_os = "macos")]
+    pub utheme: super::utheme::Live,
 }
 
 impl App {
@@ -220,6 +223,8 @@ impl App {
             history: Vec::new(),
             history_idx: None,
             raw_edit: None,
+            #[cfg(target_os = "macos")]
+            utheme: Default::default(),
             s,
         };
         app.tab = app.tabs().len().saturating_sub(1);
@@ -862,7 +867,7 @@ impl App {
     }
 
     fn preview_theme(&mut self, name: &str) {
-        match theme::load(name, &self.s.paths.themes_dir()) {
+        match self.s.theme_named(name) {
             Ok(t) => self.s.theme = t,
             Err(e) => self.error(e),
         }
