@@ -1,6 +1,6 @@
 [package]
 name = "ctui"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 # Oldest Rust that builds ctui (ratatui needs 1.88). CI checks it.
 rust-version = "1.88"
