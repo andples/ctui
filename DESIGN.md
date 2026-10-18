@@ -502,6 +502,13 @@ lists = ["#88c0d0", "#a3be8c", "#d08770", "#b48ead", "#ebcb8b", "#81a1c1"]
     at least 3:1 contrast on `bg`).
 - **Built in:** ctui is MIT, so only `default`, `light` and the 12 MIT palettes
   are compiled in; the Monkeytype files load from a themes folder.
+- **Live from utheme (macOS only):** with `theme = "utheme"` the TUI follows
+  utheme's client protocol v1 (in the utheme repo, `docs/CLIENT-PROTOCOL.md`):
+  it reads `~/.local/share/utheme/current/{theme.json,palette.json}`, watches
+  for the link to change (FSEvents via `notify`, plus a 1 s poll), recolours,
+  and writes a heartbeat in `~/.local/state/utheme/clients/`. The palette maps
+  onto `bg fg sub main error lists` and goes through `Theme::parse`, so live
+  and static `themes/utheme.toml` look the same. Off macOS none of it is built.
 
 ---
 
@@ -543,6 +550,8 @@ src/
   mcp.rs           the MCP server: tools, fields → Draft, install, skill
   cli.rs           subcommands → core::ops; text and --json output
   session.rs       paths + config + store + journal + theme, shared by both
+  utheme_client.rs macOS only: utheme's client protocol (read, watch, heartbeat);
+                   no ctui types, the same file as in ttyp
   shortcuts.rs     `ctui init`: the page shortcut rule and the bash/zsh/fish snippets
   theme.rs         themes, colours, list palette slots
   config.rs        Config, Paths, :set
@@ -550,6 +559,7 @@ src/
     app.rs         App state, rows, dispatch(Action), input, mouse, `:` commands
     keys.rs        keymap (defaults + [keys]), help table
     view.rs        drawing only
+    utheme.rs      macOS only: following utheme (roles, start/stop, the event-loop wait)
     tests.rs       TestBackend tests
 ```
 
@@ -571,7 +581,8 @@ Conventions (from ttyp, where they worked):
 zone's name for TZID), `uuid`, `zip` (deflate only). The iCalendar
 reader/writer is hand-written (`core/ical.rs`, ~200 lines) because perfect
 round-tripping of unknown properties mattered more than a crate's typed
-model. No async runtime, no file-watch crate, no NLP crate.
+model. No async runtime, no NLP crate, and no file-watch crate except
+`notify` on macOS only, for following utheme live (§10.1).
 
 ### Targets
 

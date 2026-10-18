@@ -282,6 +282,23 @@ finds `themes/` next to it, packages can install them to `share/ctui/themes/`,
 and copying any of them into `~/.config/ctui/themes/` works too. The crates.io
 package only carries the 14 MIT and own themes.
 
+### Live themes with utheme (macOS)
+
+utheme, a macOS theme switcher, changes the theme of every app at once. With
+`theme = "utheme"` (which utheme's ctui integration sets, or `ct set theme
+utheme`), the ctui TUI on macOS follows it live: it opens in utheme's current
+theme and recolours within a second of `utheme set <theme>`, with no restart.
+Pick any other theme and ctui stops following. CLI output uses the
+`themes/utheme.toml` utheme writes on every switch.
+
+ctui only reads utheme's files (`~/.local/share/utheme/current`) and writes one
+status file for `utheme clients` (`~/.local/state/utheme/clients/ctui-<pid>.json`,
+removed on exit). It never changes your config. If utheme isn't set up, ctui
+uses `themes/utheme.toml` if it's there, else `default`. `UTHEME_HOME` moves
+utheme's folders, as it does for utheme itself.
+
+On Linux and Windows `theme = "utheme"` just loads `themes/utheme.toml`.
+
 ## Agents (MCP)
 
 `ctui mcp` is an [MCP](https://modelcontextprotocol.io) server, so AI agents

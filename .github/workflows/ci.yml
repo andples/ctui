@@ -5,7 +5,11 @@ on:
   pull_request:
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -15,10 +19,30 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo package --list > /dev/null
+      # Following utheme live: on macOS the TUI must follow a fake utheme
+      # folder, anywhere else it must ignore it (scripts/utheme-e2e.sh).
+      - name: utheme end to end
+        run: |
+          command -v tmux || { if [ "$RUNNER_OS" = macOS ]; then brew install tmux; else sudo apt-get install -y tmux; fi; }
+          cargo build --release
+          e=$(mktemp -d); mkdir -p "$e/c" "$e/d" "$e/s"
+          printf 'theme = "utheme"\n' > "$e/c/config.toml"
+          scripts/utheme-e2e.sh ctui "$e/c/config.toml" q -- target/release/ctui --config-dir "$e/c" --data-dir "$e/d" --state-dir "$e/s"
   # The oldest Rust ctui claims to support (rust-version in Cargo.toml).
   msrv:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.88
       - run: cargo test --locked
+  # Windows isn't released, but must keep building as before.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build
