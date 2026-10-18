@@ -186,6 +186,9 @@ const BUILTIN: &[(&str, &str)] = themes!(
 pub enum Origin {
     Builtin,
     File(PathBuf),
+    /// `utheme` with no `themes/utheme.toml`: followed live (macOS).
+    #[cfg(target_os = "macos")]
+    Live,
 }
 
 /// Folders searched for theme files, lowest priority first: packaged
@@ -219,6 +222,9 @@ pub fn available(user_dir: &Path) -> BTreeMap<String, Origin> {
     for (name, _) in BUILTIN.iter() {
         out.insert(name.to_string(), Origin::Builtin);
     }
+    // On macOS `utheme` always exists: the TUI follows utheme live.
+    #[cfg(target_os = "macos")]
+    out.insert(crate::utheme_client::THEME.to_string(), Origin::Live);
     for dir in theme_dirs(user_dir) {
         let Ok(rd) = fs::read_dir(&dir) else { continue };
         for e in rd.flatten() {
@@ -248,6 +254,12 @@ pub fn load(name: &str, user_dir: &Path) -> Result<Theme> {
                 .expect("listed");
             Theme::parse(text, name)
         }
+        // Until the TUI has utheme's palette (`Session::theme_named`), the default.
+        #[cfg(target_os = "macos")]
+        Some(Origin::Live) => Ok(Theme {
+            name: name.to_string(),
+            ..Theme::fallback()
+        }),
         None => bail!("no theme {name:?}"),
     }
 }

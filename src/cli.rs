@@ -964,6 +964,8 @@ pub fn run(s: &mut Session, cmd: Cmd, out: &mut Out, interactive: bool) -> Resul
                         theme::Origin::File(p) => {
                             out.paint(&format!("  {}", p.display()), s.theme.sub, false)
                         }
+                        #[cfg(target_os = "macos")]
+                        theme::Origin::Live => out.paint("  live from utheme", s.theme.sub, false),
                     };
                     let swatch = match theme::load(&n, &s.paths.themes_dir()) {
                         Ok(t) => t

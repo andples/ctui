@@ -488,7 +488,11 @@ fn follows_utheme_live() {
     // Uninstalled: back to the default, heartbeat gone. Back: followed again.
     std::fs::remove_file(&uth.current).unwrap();
     wait(&mut t.app, &|a| a.s.live_theme.is_none());
-    assert_eq!(t.app.s.theme, crate::theme::Theme::fallback());
+    let fallback = crate::theme::Theme::fallback();
+    assert_eq!(
+        (t.app.s.theme.bg, t.app.s.theme.lists.clone()),
+        (fallback.bg, fallback.lists)
+    );
     assert!(!beat.exists());
     switch(&uth, &generation(&uth, "g1", "#111111"));
     wait(&mut t.app, &|a| bg(a) == Color::Rgb(0x11, 0x11, 0x11));
@@ -502,4 +506,21 @@ fn follows_utheme_live() {
     assert_eq!(t.app.s.cfg.theme, "nord");
     assert!(!beat.exists());
     assert_ne!(bg(&t.app), Color::Rgb(0x11, 0x11, 0x11));
+
+    // Back by hand, with no themes/utheme.toml: accepted, followed again.
+    assert!(!t.app.s.paths.themes_dir().join("utheme.toml").exists());
+    t.app.mode = Mode::Normal;
+    key(&mut t.app, ':');
+    typed(&mut t.app, "theme utheme");
+    enter(&mut t.app);
+    assert_eq!(t.app.s.cfg.theme, "utheme");
+    assert!(t.app.utheme_tick());
+    assert_eq!(bg(&t.app), Color::Rgb(0x11, 0x11, 0x11));
+    assert!(beat.exists());
+    // The picker lists it too.
+    t.app.mode = Mode::Normal;
+    key(&mut t.app, 'c');
+    assert!(
+        matches!(&t.app.mode, Mode::Themes { names, .. } if names.iter().any(|n| n == "utheme"))
+    );
 }
