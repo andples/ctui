@@ -14,7 +14,9 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
 use std::time::Duration;
@@ -25,6 +27,21 @@ pub const PROTOCOL: u64 = 1;
 pub const THEME: &str = "utheme";
 /// How often `current` is re-read in case a file system event was missed.
 pub const POLL: Duration = Duration::from_secs(1);
+
+static LOG: OnceLock<fn(&str)> = OnceLock::new();
+
+/// Where to report problems this module carries on from (a watcher that
+/// couldn't start, a heartbeat that couldn't be written). Unset, they are
+/// dropped. The first call wins.
+pub fn set_log(log: fn(&str)) {
+    let _ = LOG.set(log);
+}
+
+fn log(msg: impl AsRef<str>) {
+    if let Some(log) = LOG.get() {
+        log(msg.as_ref());
+    }
+}
 
 /// An sRGB colour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -250,9 +267,14 @@ impl Watcher {
         let (wake, wakes) = mpsc::channel();
         let fs_wake = wake.clone();
         // Without a thread there are no live updates, but nothing else breaks.
-        let _ = thread::Builder::new()
+        if let Err(e) = thread::Builder::new()
             .name("utheme".into())
-            .spawn(move || watch(paths, needs, seen, tx, on_update, fs_wake, wakes));
+            .spawn(move || watch(paths, needs, seen, tx, on_update, fs_wake, wakes))
+        {
+            log(format!(
+                "no live theme updates: could not start the watcher: {e}"
+            ));
+        }
         Watcher { rx, wake }
     }
 
@@ -335,16 +357,24 @@ pub fn wake_terminal() {
     }
 }
 
+/// A file system watch on `dir`, or `None` (logged) when it can't be set
+/// up; the one-second poll still notices switches then.
 fn fs_watcher(dir: &Path, wake: Sender<Wake>) -> Option<notify::RecommendedWatcher> {
     use notify::Watcher as _;
-    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if res.is_ok() {
+    let watch = || {
+        let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+            if let Err(e) = res {
+                log(format!("file watch error, re-reading: {e}"));
+            }
+            // An error may mean missed events, so look either way.
             let _ = wake.send(Wake::Fs);
-        }
-    })
-    .ok()?;
-    w.watch(dir, notify::RecursiveMode::NonRecursive).ok()?;
-    Some(w)
+        })?;
+        w.watch(dir, notify::RecursiveMode::NonRecursive)?;
+        Ok::<_, notify::Error>(w)
+    };
+    watch()
+        .inspect_err(|e| log(format!("can't watch {}, polling: {e}", dir.display())))
+        .ok()
 }
 
 /// Following utheme for one app: the watcher plus the heartbeat. Dropping it
@@ -407,7 +437,7 @@ impl Client {
     }
 
     fn report(&mut self, u: &Update) {
-        let _ = match u {
+        let written = match u {
             Update::Theme(s) => {
                 self.showing = Some(s.generation.clone());
                 heartbeat::write_in(
@@ -431,6 +461,9 @@ impl Client {
                 Ok(())
             }
         };
+        if let Err(e) = written {
+            log(format!("could not write the heartbeat: {e}"));
+        }
     }
 }
 
@@ -482,8 +515,14 @@ pub mod heartbeat {
         fs::create_dir_all(&paths.clients)?;
         let path = path(paths, app);
         let tmp = path.with_extension("json.tmp");
-        fs::write(&tmp, beat.to_string() + "\n")?;
-        fs::rename(&tmp, &path).inspect_err(|_| {
+        let written = (|| {
+            let mut f = fs::File::create(&tmp)?;
+            f.write_all((beat.to_string() + "\n").as_bytes())?;
+            // On disk before the rename, so a crash never leaves it empty.
+            f.sync_all()?;
+            fs::rename(&tmp, &path)
+        })();
+        written.inspect_err(|_| {
             let _ = fs::remove_file(&tmp);
         })
     }
@@ -496,7 +535,13 @@ pub mod heartbeat {
     }
 
     pub fn remove_in(paths: &Paths, app: &str) {
-        let _ = fs::remove_file(path(paths, app));
+        let path = path(paths, app);
+        match fs::remove_file(&path) {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => {
+                log(format!("could not remove {}: {e}", path.display()));
+            }
+            _ => {}
+        }
     }
 }
 
